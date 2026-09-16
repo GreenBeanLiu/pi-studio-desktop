@@ -41,7 +41,7 @@ Configure the target in the current PowerShell session:
 
 ```powershell
 $env:PI_STUDIO_SMOKE_DEVICE_ID = 'pi-studio:<device-id>'
-$env:PI_STUDIO_SMOKE_WORKSPACE = 'D:\Works\personal-agent-runtime'
+$env:PI_STUDIO_SMOKE_WORKSPACE = 'D:\Works\pi-studio-control-plane'
 # Optional when the control plane is not the sibling checkout (the script tries ../pi-studio-control-plane, then ../personal-agent-runtime):
 $env:PI_STUDIO_RUNTIME_PATH = 'D:\Works\pi-studio-control-plane'
 # Optional when Python is not in that checkout's .venv:
