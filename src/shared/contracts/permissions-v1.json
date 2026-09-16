@@ -1,0 +1,68 @@
+{
+  "contract": "permissions/v1",
+  "capabilities": {
+    "task_execution": {
+      "effect": "run",
+      "description": "Run at all. Only demanded when approval_mode=always; never derived from tools, labels or risk."
+    },
+    "workspace_write": {
+      "effect": "write",
+      "description": "Create or change files inside the bound workspace. Unlocks local.write on the desktop gateway and the rw mount in the cloud sandbox."
+    },
+    "git_push": {
+      "effect": "publish",
+      "description": "Push to a remote. Unlocks the github egress profile and a repo-scoped installation token with contents:write."
+    },
+    "pull_request": {
+      "effect": "publish",
+      "description": "Open, edit, merge or close pull requests. Unlocks the github egress profile and pull_requests:write."
+    },
+    "production_deploy": {
+      "effect": "deploy",
+      "description": "Run something that changes a live system: deploy scripts, wrangler/kubectl/terraform apply, systemctl on services."
+    },
+    "destructive_command": {
+      "effect": "destroy",
+      "description": "Anything that can delete or that the classifier cannot prove safe: rm -rf, git reset --hard, DROP TABLE, and every unrecognised shell command."
+    }
+  },
+  "shell_permissions": ["shell_read", "workspace_write", "git_push", "pull_request", "production_deploy", "destructive_command"],
+  "label_capabilities": {
+    "agent:push": "git_push",
+    "agent:pr": "pull_request",
+    "agent:deploy": "production_deploy",
+    "agent:destructive": "destructive_command"
+  },
+  "risk_capabilities": {
+    "read_only": [],
+    "write": ["workspace_write"],
+    "destructive": ["destructive_command"]
+  },
+  "tool_capabilities": {
+    "local.list": [],
+    "local.read": [],
+    "local.write": ["workspace_write"],
+    "server.time": [],
+    "shell.exec": "shell-classified",
+    "bash": "shell-classified"
+  },
+  "sandbox_effects": {
+    "workspace_rw": ["workspace_write", "git_push", "pull_request", "production_deploy", "destructive_command"],
+    "github_egress": ["git_push", "pull_request"]
+  },
+  "shell_classifier": {
+    "version": 1,
+    "flags": "i",
+    "read_only": [
+      "^pwd$",
+      "^git\\s+status(?:\\s+(?:--short|--branch|--porcelain(?:=v?\\d+)?|-s|-b))*$"
+    ],
+    "composition": "[;&|><`\\n]|\\$\\(",
+    "destructive": "(?:^|[;&|]\\s*|\\s)(?:rm\\s+-[^\\n]*[rf]|git\\s+(?:reset\\s+--hard|clean\\s+-[^\\n]*f)|drop\\s+(?:database|table)|format\\s+[a-z]:)(?:\\s|$)",
+    "deploy": "(?:^|[\\s/\\\\])(?:deploy(?:\\.sh|\\.ps1)?|wrangler\\s+deploy|kubectl\\s+(?:apply|delete)|terraform\\s+apply|systemctl\\s+(?:restart|start|stop))(?:\\s|$)",
+    "git_push": "^git\\s+push(?:\\s|$)",
+    "pull_request": "^gh\\s+pr\\s+(?:create|merge|close|reopen|edit)(?:\\s|$)",
+    "order": ["read_only", "composition", "destructive", "deploy", "git_push", "pull_request"],
+    "fallback": "destructive_command"
+  }
+}
