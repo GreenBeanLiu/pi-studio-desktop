@@ -31,9 +31,13 @@ import {
   formatFavoriteModelRoutes,
   parseFavoriteModelRoutes,
 } from '../../../shared/model-route'
+import { formatLlmProfileModels, parseLlmProfileModels } from './llm-profile-models'
 import { QRCodeSVG } from 'qrcode.react'
 
 type Settings = SettingsView & { clearCloudImageKey?: boolean }
+
+/** 线路编辑草稿。models 以原始文本持有,保存时才解析 —— 见 llm-profile-models.ts。 */
+type LlmProfileDraft = Omit<LlmProfileWrite, 'models'> & { modelsText: string; create: boolean }
 
 // 云端线路管理界面已开放:用于维护 provider 分组、同步模型、查看 Cloudflare Agent health。
 // 本地直连已于 2026-08-19 整体退役,不再有可恢复的开关。
@@ -361,7 +365,7 @@ export default function SettingsModal({
   const [llmProfilesLoading, setLlmProfilesLoading] = useState(false)
   const [llmProfilesError, setLlmProfilesError] = useState('')
   const [llmProfileHealthLoading, setLlmProfileHealthLoading] = useState<string | null>(null)
-  const [llmProfileDraft, setLlmProfileDraft] = useState<(LlmProfileWrite & { create: boolean }) | null>(null)
+  const [llmProfileDraft, setLlmProfileDraft] = useState<LlmProfileDraft | null>(null)
   const [llmProfileSaving, setLlmProfileSaving] = useState(false)
   const [deepSeekApiKey, setDeepSeekApiKey] = useState('')
   const [deepSeekSaving, setDeepSeekSaving] = useState(false)
@@ -534,7 +538,7 @@ export default function SettingsModal({
       base_url: '',
       api_type: 'openai-completions',
       api_key: '',
-      models: [],
+      modelsText: '',
       enabled: true,
       sort_order: llmProfiles.length,
       create: true,
@@ -548,7 +552,7 @@ export default function SettingsModal({
       base_url: profile.base_url ?? '',
       api_type: profile.api_type,
       api_key: '',
-      models: profile.models,
+      modelsText: formatLlmProfileModels(profile.models),
       enabled: profile.enabled,
       sort_order: profile.sort_order,
       create: false,
@@ -560,7 +564,8 @@ export default function SettingsModal({
     setLlmProfileSaving(true)
     setLlmProfilesError('')
     try {
-      const { create, ...profile } = llmProfileDraft
+      const { create, modelsText, ...rest } = llmProfileDraft
+      const profile: LlmProfileWrite = { ...rest, models: parseLlmProfileModels(modelsText) }
       const result = await api.llmProfiles.save(
         create ? { profile, create: true } : { profile, create: false },
       )
@@ -1591,8 +1596,8 @@ export default function SettingsModal({
             <div className={styles.section}>
               <span className={styles.label}>可用模型</span>
               <Input.TextArea
-                value={llmProfileDraft.models.join('\n')}
-                onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, models: e.target.value.split(/[,，\n]/).map((value) => value.trim()).filter(Boolean) }))}
+                value={llmProfileDraft.modelsText}
+                onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, modelsText: e.target.value }))}
                 placeholder={'grok-4\ngrok-4-fast'}
                 autoSize={{ minRows: 3, maxRows: 7 }}
               />
