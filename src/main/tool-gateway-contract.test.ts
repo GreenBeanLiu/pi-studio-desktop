@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
@@ -265,4 +266,44 @@ describe('Tool Gateway Contract SoT', () => {
     })
     expect(reply).toMatchObject({ code: 'ENOENT' })
   })
+
+  it('runs verify.checks against the active workspace', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-verify-checks-'))
+    writeFileSync(join(workspace, 'README.md'), '# Demo\n')
+    mocks.getWorkspacePath.mockReturnValue(workspace)
+    const reply = await executeLocalToolOperation({
+      operationId: 'toolop-verify-ok',
+      toolName: 'verify.checks',
+      protocolVersion: 2,
+      deadlineAt: '2099-01-01T00:00:00Z',
+      arguments: { workspace, checks: [{ type: 'file', path: 'README.md', contains: '# Demo' }] },
+      scope: { workspace, permissions: ['verify.checks'] },
+    })
+    expect(reply).toMatchObject({ ok: true, operationId: 'toolop-verify-ok' })
+    expect((reply as { result: { passed: boolean; contract: string } }).result).toMatchObject({
+      contract: 'engine-verify/v1',
+      passed: true,
+    })
+    rmSync(workspace, { recursive: true, force: true })
+  })
+
+  it('refuses command checks without approved workspace_write', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-verify-cmd-'))
+    mocks.getWorkspacePath.mockReturnValue(workspace)
+    const reply = await executeLocalToolOperation({
+      operationId: 'toolop-verify-cmd',
+      toolName: 'verify.checks',
+      protocolVersion: 2,
+      deadlineAt: '2099-01-01T00:00:00Z',
+      arguments: {
+        workspace,
+        checks: [{ type: 'command', executable: process.execPath, args: ['-e', 'process.exit(0)'] }],
+      },
+      scope: { workspace, permissions: ['verify.checks'] },
+      audit: { approved_capabilities: [] },
+    })
+    expect(reply).toMatchObject({ code: 'SCOPE_MISMATCH' })
+    rmSync(workspace, { recursive: true, force: true })
+  })
 })
+

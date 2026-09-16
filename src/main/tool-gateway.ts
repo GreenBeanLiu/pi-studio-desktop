@@ -9,6 +9,7 @@ import {
   writeLocalFile,
 } from './local-file-tools'
 import { isLocalShellPermission, requiredLocalShellPermission } from './local-shell-scope'
+import { runWorkspaceChecks } from './workspace-checks'
 
 type RemoteCommandFailure = { error: string; code: string }
 export type LocalToolOperationReply = {
@@ -45,6 +46,16 @@ export const LOCAL_TOOL_HANDLERS = {
   'local.list': async (args: Record<string, unknown>) => listLocalDirectory(piClientManager.getWorkspacePath(), args),
   'local.read': async (args: Record<string, unknown>) => readLocalFile(piClientManager.getWorkspacePath(), args),
   'local.write': async (args: Record<string, unknown>) => writeLocalFile(piClientManager.getWorkspacePath(), args),
+  'verify.checks': async (args: Record<string, unknown>) => {
+    if (!Array.isArray(args.checks)) {
+      return { error: 'arguments.checks must be a list', code: 'INVALID_TOOL_ARGUMENTS' }
+    }
+    const workspace = piClientManager.getWorkspacePath()
+    if (!workspace) {
+      return { error: 'No workspace is open', code: 'NO_WORKSPACE' }
+    }
+    return runWorkspaceChecks(workspace, args.checks)
+  },
 } satisfies Record<string, LocalToolHandler>
 
 export const LOCAL_TOOL_PROTOCOL = {
@@ -62,6 +73,7 @@ export const TOOL_GATEWAY_MANIFEST = {
     { name: 'local.list', scopeVersion: 1, requiresWorkspace: true, maxEntries: LOCAL_LIST_MAX_ENTRIES },
     { name: 'local.read', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES },
     { name: 'local.write', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES },
+    { name: 'verify.checks', scopeVersion: 1, requiresWorkspace: true },
   ],
 } as const
 
@@ -111,6 +123,19 @@ export async function executeLocalToolOperation(msg: Record<string, unknown>): P
         return { error: `shell command requires ${required} permission`, code: 'SCOPE_MISMATCH' }
       }
     }
+    if (toolName === 'verify.checks') {
+      const checks = Array.isArray(args.checks) ? args.checks : []
+      const needsWrite = checks.some((item) => isRecord(item) && item.type === 'command')
+      const audit = isRecord(msg.audit) ? msg.audit : {}
+      const approved = audit.approved_capabilities ?? audit.approvedCapabilities
+      const approvedList = Array.isArray(approved) ? approved.map((item) => String(item)) : []
+      if (needsWrite && !approvedList.includes('workspace_write')) {
+        return { error: 'command checks require approved workspace_write', code: 'SCOPE_MISMATCH' }
+      }
+    }
+  }
+  if (toolName === 'verify.checks' && protocolVersion < 2) {
+    return { error: 'verify.checks requires tool protocol v2', code: 'UNSUPPORTED_TOOL_PROTOCOL' }
   }
   const handler = LOCAL_TOOL_HANDLERS[toolName as keyof typeof LOCAL_TOOL_HANDLERS]
   if (!handler) {

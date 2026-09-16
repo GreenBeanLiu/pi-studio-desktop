@@ -679,7 +679,7 @@ describe('remote-control command protocol', () => {
         id: 50,
         data: {
           commands: [...SUPPORTED_COMMANDS], hostEvents: [...HOST_EVENT_CHANNELS],
-          localTools: ['shell.exec', 'bash', 'local.list', 'local.read', 'local.write'], localFileMaxBytes: 65536,
+          localTools: ['shell.exec', 'bash', 'local.list', 'local.read', 'local.write', 'verify.checks'], localFileMaxBytes: 65536,
           toolProtocol: LOCAL_TOOL_PROTOCOL,
           toolGateway: {
             manifestVersion: 1,
@@ -690,6 +690,7 @@ describe('remote-control command protocol', () => {
               { name: 'local.list', scopeVersion: 1, requiresWorkspace: true, maxEntries: 200 },
               { name: 'local.read', scopeVersion: 1, requiresWorkspace: true, maxBytes: 65536 },
               { name: 'local.write', scopeVersion: 1, requiresWorkspace: true, maxBytes: 65536 },
+              { name: 'verify.checks', scopeVersion: 1, requiresWorkspace: true },
             ],
           },
         },

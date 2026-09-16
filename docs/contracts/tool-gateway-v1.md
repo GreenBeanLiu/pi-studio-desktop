@@ -47,12 +47,19 @@ Runtime 从设备能力握手得到以下结构的语义：
       "scope_version": 1,
       "requires_workspace": true,
       "max_bytes": 65536
+    },
+    {
+      "name": "verify.checks",
+      "scope_version": 1,
+      "requires_workspace": true
     }
   ]
 }
 ```
 
 现有 Desktop Relay 的 `toolGateway.manifestVersion`、`operationProtocols` 和 camelCase tool entries 由适配器映射到上述 canonical 结构。滚动升级期间，缺少 manifest 的旧桌面仍按兼容策略处理，但不能把缺少声明当成支持全部工具。
+
+`verify.checks` 不是模型可见工具。控制面在 WORKER 之后派发：`arguments.checks` 使用 `engine-verify/v1` 的 `file` / `command` / `diff` 词汇；必须走 protocol v2；含 `command` 的检查还要求 `audit.approved_capabilities` 包含 `workspace_write`。成功结果的 `result` 就是一份 `engine-verify/v1` 文档。旧桌面未声明该工具时，控制面 fail closed（`verification_unavailable`）。
 
 ## 3. Tool operation request
 
