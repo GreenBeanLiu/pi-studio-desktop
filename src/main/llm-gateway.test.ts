@@ -150,3 +150,32 @@ describe('LLM gateway model registration', () => {
     ])
   })
 })
+
+describe('model-catalog/v1 seed (mirror of pi-studio-control-plane fixtures/model-catalog-v1-deepseek.json)', () => {
+  it('the DeepSeek fallback prices every fixture model and alias exactly as the fixture says', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const root = join(__dirname, '..', '..')
+    const inSrc = readFileSync(join(root, 'src', 'shared', 'contracts', 'model-catalog-v1-deepseek.json'))
+    const inDocs = readFileSync(join(root, 'docs', 'contracts', 'fixtures', 'model-catalog-v1-deepseek.json'))
+    expect(inSrc.equals(inDocs), 'src/shared and docs copies drifted').toBe(true)
+    const fixture = JSON.parse(inSrc.toString('utf8')) as {
+      models: Record<string, { cost: Record<string, number>; contextWindow: number; maxTokens: number; aliases: string[] }>
+    }
+    const ids = Object.entries(fixture.models).flatMap(([id, entry]) => [id, ...entry.aliases])
+    const providers = buildGatewayProviderConfigs('https://relay.example', [
+      {
+        id: 'deepseek', display_name: 'DeepSeek', base_url: 'https://api.deepseek.com', api_type: 'openai-completions',
+        models: ids, enabled: true, sort_order: 0, has_key: true,
+      },
+    ])
+    for (const [id, entry] of Object.entries(fixture.models)) {
+      for (const candidate of [id, ...entry.aliases]) {
+        const model = providers.deepseek.models.find((m) => m.id === candidate)
+        expect(model, candidate).toBeDefined()
+        expect(model).toEqual(expect.objectContaining({ cost: entry.cost, contextWindow: entry.contextWindow, maxTokens: entry.maxTokens, reasoning: true }))
+      }
+    }
+  })
+})
+

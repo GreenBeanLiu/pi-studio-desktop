@@ -5,6 +5,7 @@ import type {
   LlmProviderProfile,
 } from '../shared/contracts'
 import { cloudFetch } from './cloud-fetch'
+import deepSeekCatalog from '../shared/contracts/model-catalog-v1-deepseek.json'
 
 export type { LlmProfileWrite, LlmProviderHealth, LlmProviderProfile } from '../shared/contracts'
 
@@ -46,30 +47,35 @@ function modelFromMetadata(id: string, metadata: LlmModelMetadata): PiCustomMode
   return { id, name: name?.trim() || id, ...rest }
 }
 
+/**
+ * model-catalog/v1 的 DeepSeek 种子(逐字节镜像自 pi-studio-control-plane
+ * docs/contracts/fixtures/model-catalog-v1-deepseek.json)。运行时的真源是云端 profile 的
+ * model_metadata(`/llm/catalog`),这份只在 catalog 没给 metadata 时兜底;价格不再写在代码里。
+ */
+function deepSeekSeed(id: string): (typeof deepSeekCatalog.models)[keyof typeof deepSeekCatalog.models] | null {
+  const wanted = id.toLowerCase()
+  for (const [model, entry] of Object.entries(deepSeekCatalog.models)) {
+    if (model === wanted || entry.aliases.some((alias) => alias.toLowerCase() === wanted)) return entry
+  }
+  return null
+}
+
 function buildGatewayModel(profile: LlmProviderProfile, id: string): PiCustomModelConfig {
   const metadata = profile.model_metadata?.[id]
   if (metadata) return modelFromMetadata(id, metadata)
 
-  const reasoning = isGatewayReasoningModel(id)
-  if (!reasoning) return { id, name: id }
-  if (profile.id === 'deepseek' && id.toLowerCase().startsWith('deepseek-v4-')) {
+  // 种子先于名字启发式:deepseek-flash 这个现名不长 "v4" 字样,靠正则猜会把它当成非推理模型。
+  const seed = profile.id === 'deepseek' ? deepSeekSeed(id) : null
+  if (seed) {
     const isPro = id.toLowerCase() === 'deepseek-v4-pro'
     return {
       id,
       name: isPro ? 'DeepSeek V4 Pro' : 'DeepSeek V4 Flash',
-      reasoning: true,
+      reasoning: seed.reasoning,
       input: ['text'],
-      // 官网 2026-09-13(CNY / 1M tokens,峰时):flash 未命中 ¥2 / 输出 ¥8 / 命中 ¥0.04,
-      // pro ¥9 / ¥27 / ¥0.30;按 ≈6.8 折 USD。谷时半价,这里按峰时标。之前的 0.14 / 0.28 那组不知出处,
-      // 比官网低两到四倍,后端网关按它算预算兜底时兜不住 —— 云端 profile 的 metadata 已改成这组。
-      cost: {
-        input: isPro ? 1.32 : 0.3,
-        output: isPro ? 3.96 : 1.2,
-        cacheRead: isPro ? 0.044 : 0.006,
-        cacheWrite: 0,
-      },
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
+      cost: { ...seed.cost },
+      contextWindow: seed.contextWindow,
+      maxTokens: seed.maxTokens,
       thinkingLevelMap: {
         minimal: 'low',
         low: 'low',
@@ -86,6 +92,8 @@ function buildGatewayModel(profile: LlmProviderProfile, id: string): PiCustomMod
       },
     }
   }
+  const reasoning = isGatewayReasoningModel(id)
+  if (!reasoning) return { id, name: id }
   return { id, name: id, reasoning: true, compat: { supportsReasoningEffort: true } }
 }
 

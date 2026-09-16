@@ -1,0 +1,22 @@
+{
+  "contract": "model-catalog/v1",
+  "profile": "deepseek",
+  "generated_at": "2026-09-16T00:00:00+00:00",
+  "models": {
+    "deepseek-flash": {
+      "cost": {"input": 0.3, "output": 1.2, "cacheRead": 0.006, "cacheWrite": 0},
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "aliases": ["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]
+    },
+    "deepseek-v4-pro": {
+      "cost": {"input": 1.32, "output": 3.96, "cacheRead": 0.044, "cacheWrite": 0},
+      "contextWindow": 1000000,
+      "maxTokens": 384000,
+      "reasoning": true,
+      "aliases": []
+    }
+  },
+  "tiers": {"pro": "deepseek-v4-pro", "flash": "deepseek-flash", "vision": "deepseek-flash"}
+}
