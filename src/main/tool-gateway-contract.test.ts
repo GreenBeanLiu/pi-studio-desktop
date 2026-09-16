@@ -16,6 +16,7 @@ vi.mock('./pi-client', () => ({
 }))
 
 import { executeLocalToolOperation, TOOL_GATEWAY_MANIFEST } from './tool-gateway'
+import { canonicalToolReceipt, type ToolReceipt } from './tool-receipts'
 
 const FIXTURES_DIR = join(process.cwd(), 'docs/contracts/fixtures')
 const SCHEMAS_DIR = join(process.cwd(), 'docs/contracts/schemas')
@@ -32,6 +33,7 @@ const ERROR_CODES = [
   'EEXIST',
   'ENOENT',
   'LOCAL_FILE_ERROR',
+  'RECEIPT_UNAVAILABLE',
 ] as const
 
 const ToolErrorSchema = z.object({
@@ -136,6 +138,39 @@ const ResumeEnvelopeSchema = z
   })
   .passthrough()
 
+const ToolOperationReceiptSchema = z
+  .object({
+    operation_id: z.string().min(1),
+    state: z.enum(['unknown', 'dispatched', 'settled']),
+    tool_name: z.string().min(1).optional(),
+    task_id: z.string().min(1).optional(),
+    subtask_id: z.string().min(1).optional(),
+    principal: z.string().min(1).optional(),
+    idempotency_key: z.string().min(1).optional(),
+    arguments_sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+    dispatched_at: z.string().datetime().optional(),
+    settled_at: z.string().datetime().optional(),
+    ok: z.boolean().optional(),
+    code: z.string().min(1).optional(),
+    error: z.string().optional(),
+    result: z.unknown().optional(),
+  })
+  .passthrough()
+  .superRefine((value, ctx) => {
+    if (value.state === 'unknown' && (value.ok !== undefined || value.dispatched_at || value.settled_at)) {
+      ctx.addIssue({ code: 'custom', message: 'unknown receipts carry no execution facts', path: ['state'] })
+    }
+    if (value.state === 'dispatched' && (!value.dispatched_at || !value.tool_name || value.ok !== undefined)) {
+      ctx.addIssue({ code: 'custom', message: 'dispatched receipts need dispatched_at + tool_name and no ok', path: ['state'] })
+    }
+    if (value.state === 'settled' && (!value.settled_at || value.ok === undefined)) {
+      ctx.addIssue({ code: 'custom', message: 'settled receipts need settled_at + ok', path: ['state'] })
+    }
+    if (value.ok === false && value.error === undefined) {
+      ctx.addIssue({ code: 'custom', message: 'ok:false requires error', path: ['error'] })
+    }
+  })
+
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8')) as unknown
 }
@@ -150,6 +185,7 @@ describe('Tool Gateway Contract SoT', () => {
       'tool-capabilities.schema.json',
       'tool-operation-request.schema.json',
       'tool-operation-result.schema.json',
+      'tool-operation-receipt.schema.json',
       'resume-envelope.schema.json',
     ]
     const present = readdirSync(SCHEMAS_DIR).sort()
@@ -170,6 +206,24 @@ describe('Tool Gateway Contract SoT', () => {
     expect(
       ResumeEnvelopeSchema.safeParse(readJson(join(FIXTURES_DIR, 'tool-operation-resume-envelope.json'))).success,
     ).toBe(true)
+    for (const name of ['settled', 'dispatched', 'unknown', 'interrupted']) {
+      const parsed = ToolOperationReceiptSchema.safeParse(readJson(join(FIXTURES_DIR, `tool-operation-receipt-${name}.json`)))
+      expect(parsed.success, `tool-operation-receipt-${name}.json: ${JSON.stringify(parsed.error?.issues)}`).toBe(true)
+    }
+  })
+
+  it('maps the desktop ledger receipt onto the canonical receipt shape', () => {
+    const settled: ToolReceipt = {
+      operationId: 'toolop-1', state: 'settled', toolName: 'local.write', taskId: 'task-1', subtaskId: 'sub-1',
+      principal: 'account:acc-1', idempotencyKey: 'task-1:call-1', argumentsSha256: 'a'.repeat(64),
+      dispatchedAt: '2026-09-16T08:00:00.000Z', settledAt: '2026-09-16T08:00:00.120Z', ok: true, result: { bytes: 5 },
+    }
+    expect(ToolOperationReceiptSchema.safeParse(canonicalToolReceipt(settled)).success).toBe(true)
+    expect(canonicalToolReceipt({ operationId: 'toolop-2', state: 'unknown' })).toEqual({ operation_id: 'toolop-2', state: 'unknown' })
+    const dispatched = canonicalToolReceipt({ operationId: 'toolop-3', state: 'dispatched', toolName: 'shell.exec', dispatchedAt: '2026-09-16T08:00:00.000Z' })
+    expect(ToolOperationReceiptSchema.safeParse(dispatched).success).toBe(true)
+    // a settled receipt without ok is not a receipt
+    expect(ToolOperationReceiptSchema.safeParse({ operation_id: 'x', state: 'settled', settled_at: '2026-09-16T08:00:00.000Z' }).success).toBe(false)
   })
 
   it('maps the desktop capability manifest onto the canonical capabilities shape', () => {

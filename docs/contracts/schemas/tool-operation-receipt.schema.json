@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/GreenBeanLiu/pi-studio-desktop/docs/contracts/schemas/tool-operation-receipt.schema.json",
+  "title": "ToolOperationReceipt",
+  "description": "What the desktop ledger knows about one tool operation. Answer to the toolOperationReceipt command; the control plane reconciles an unknown_effect operation from it.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["operation_id", "state"],
+  "properties": {
+    "operation_id": { "type": "string", "minLength": 1 },
+    "state": {
+      "type": "string",
+      "enum": ["unknown", "dispatched", "settled"],
+      "description": "unknown = the desktop never received the operation (dispatching again is safe); dispatched = received, not finished (or the desktop died mid-way); settled = finished, result below."
+    },
+    "tool_name": { "type": "string", "minLength": 1 },
+    "task_id": { "type": "string", "minLength": 1 },
+    "subtask_id": { "type": "string", "minLength": 1 },
+    "principal": { "type": "string", "minLength": 1 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "arguments_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "dispatched_at": { "type": "string", "format": "date-time" },
+    "settled_at": { "type": "string", "format": "date-time" },
+    "ok": { "type": "boolean" },
+    "code": { "type": "string", "minLength": 1 },
+    "error": { "type": "string" },
+    "result": {}
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "unknown" } }, "required": ["state"] },
+      "then": { "not": { "anyOf": [{ "required": ["ok"] }, { "required": ["dispatched_at"] }, { "required": ["settled_at"] }] } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "dispatched" } }, "required": ["state"] },
+      "then": { "required": ["dispatched_at", "tool_name"], "not": { "required": ["ok"] } }
+    },
+    {
+      "if": { "properties": { "state": { "const": "settled" } }, "required": ["state"] },
+      "then": { "required": ["settled_at", "ok"] }
+    },
+    {
+      "if": { "properties": { "ok": { "const": false } }, "required": ["ok"] },
+      "then": { "required": ["error"] }
+    }
+  ]
+}

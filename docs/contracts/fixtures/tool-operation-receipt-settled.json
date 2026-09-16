@@ -1,0 +1,14 @@
+{
+  "operation_id": "toolop-example-001",
+  "state": "settled",
+  "tool_name": "local.write",
+  "task_id": "task-example-001",
+  "subtask_id": "subtask-example-001",
+  "principal": "account:acc-example",
+  "idempotency_key": "task-example-001:call-example-001",
+  "arguments_sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "dispatched_at": "2026-09-16T08:00:00.000Z",
+  "settled_at": "2026-09-16T08:00:00.120Z",
+  "ok": true,
+  "result": { "path": "note.txt", "bytes": 5 }
+}

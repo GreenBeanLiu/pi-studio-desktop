@@ -12,6 +12,7 @@
 | Request Schema | [`schemas/tool-operation-request.schema.json`](schemas/tool-operation-request.schema.json) |
 | Result Schema | [`schemas/tool-operation-result.schema.json`](schemas/tool-operation-result.schema.json) |
 | Resume envelope Schema | [`schemas/resume-envelope.schema.json`](schemas/resume-envelope.schema.json) |
+| Receipt Schema | [`schemas/tool-operation-receipt.schema.json`](schemas/tool-operation-receipt.schema.json) |
 | Fixtures | [`fixtures/`](fixtures/) |
 
 Desktop CI（`pnpm test` → `src/main/tool-gateway-contract.test.ts`）会校验：正例 fixture 通过 Schema；负例 fixture 在网关边界按错误码 fail closed。
@@ -144,7 +145,7 @@ Runtime 从设备能力握手得到以下结构的语义：
 }
 ```
 
-`error.code` 是机器可判断的稳定值；`error.message` 只用于诊断和 UI。当前至少保留：`INVALID_TOOL_OPERATION`、`INVALID_TOOL_ARGUMENTS`、`UNSUPPORTED_TOOL`、`UNSUPPORTED_TOOL_PROTOCOL`、`INVALID_DEADLINE`、`DEADLINE_EXPIRED`、`SCOPE_MISMATCH`、`WORKSPACE_MISMATCH`、`EEXIST`、`ENOENT` 和 `LOCAL_FILE_ERROR`。
+`error.code` 是机器可判断的稳定值；`error.message` 只用于诊断和 UI。当前至少保留：`INVALID_TOOL_OPERATION`、`INVALID_TOOL_ARGUMENTS`、`UNSUPPORTED_TOOL`、`UNSUPPORTED_TOOL_PROTOCOL`、`INVALID_DEADLINE`、`DEADLINE_EXPIRED`、`SCOPE_MISMATCH`、`WORKSPACE_MISMATCH`、`EEXIST`、`ENOENT`、`LOCAL_FILE_ERROR` 和 `RECEIPT_UNAVAILABLE`（§8：回执写不进盘，桌面拒绝执行）。
 
 ## 5. Resume envelope
 
@@ -172,3 +173,32 @@ Backend 不应根据 `tool_name` 执行路由或修改结果；它只负责把�
 - 添加可选字段不升级 contract version；改变必需字段、错误语义或幂等语义时升级版本。
 - 新 Desktop 先支持 v1 contract + protocol v2，再删除旧字段兼容。
 - 负例 fixture（如 scope mismatch）用于验证 fail-closed，不应被当成可执行成功样例。
+
+## 8. Receipts（回执 / 桌面账本）— 2026-09-16 加入
+
+**问题**：`executeToolOperation` 发到桌面、桌面做了、`result` 帧在回去的路上丢了（断线、Relay 重启、ack 超时）。Relay 对"桌面没收到"和"桌面做了没回"发同一个 `host_offline`，转发失败还静默吞掉。Runtime 对 `local.write` / 非只读 `shell.exec` 既不敢重发（可能做两遍），也不敢当成功。Runtime 侧把这种操作记成 **`unknown_effect`**（Reliability Matrix v1 新词汇），然后来问桌面。
+
+**桌面的义务**（有账本的桌面）：
+
+1. 能力清单里宣告 `toolGateway.receipts: 1`。没有这个字段 = 老桌面，Runtime 不来问，`unknown_effect` 等到 deadline 判 failed（`EFFECT_UNKNOWN`）。
+2. 收到 `executeToolOperation` **先记 `dispatched` 再执行**（fsync 落盘），执行完（含被校验拒绝）记 `settled` 带结果或错误码。`dispatched` 写不进盘 → **不执行**，回 `RECEIPT_UNAVAILABLE`。
+3. 进程重启时把悬着的 `dispatched` 补成 `settled { ok: false, code: "INTERRUPTED" }`：这个进程还没执行过任何操作，悬着的一定是上一次的。
+4. 回答 `toolOperationReceipt`。
+
+**命令**（Relay envelope，camelCase）：
+
+```json
+{ "id": "runtime-…", "type": "toolOperationReceipt", "operationId": "toolop-example-001" }
+```
+
+**答复** `result.data`：canonical 形状见 [`schemas/tool-operation-receipt.schema.json`](schemas/tool-operation-receipt.schema.json)（snake_case），Relay 上是 camelCase 同名字段；fixtures：`tool-operation-receipt-{settled,dispatched,unknown,interrupted}.json`。
+
+| `state` | 含义 | Runtime 的处置 |
+| --- | --- | --- |
+| `unknown` | 账本里没有这条 `operationId`：桌面从没收到 | 回 `pending`，重发是安全的 |
+| `dispatched` | 收到了、还没做完（或做到一半进程没了但还没重启） | 原地等，下次再问；到 deadline 判 `EFFECT_UNKNOWN` |
+| `settled` | 做完了：`ok` / `result` 或 `code` / `error` 就是结果 | 按 `tool.result` / `tool.failed` 恢复任务，**不重发** |
+
+账本是只追加的 JSONL（`<userData>/pi-agent/tool-operations.jsonl`），每条操作两行；`result` 超过 256 KiB 只存哈希（`{"truncated": true, "sha256": …}`）。`dispatched` 记录带 `audit.task_id` / `audit.subtask_id` / `audit.principal` / `idempotencyKey` / `arguments` 的 sha256——账本能回答"这条写是哪个任务、谁要的、写的是什么"。
+
+不在 v1 里：桌面主动推送迟到的结果（现在只被动答问）；跨 `operationId` 的按幂等键查询。

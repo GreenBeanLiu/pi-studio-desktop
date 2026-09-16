@@ -19,9 +19,9 @@ deadline / idempotency wire 语义。
 本版本范围：
 
 - 术语：`waiting_for_async_tool`、`tool.expired`、`tool.gateway_waiting`、`lease`、
-  `idempotency_key`、`deadline`
+  `idempotency_key`、`deadline`、`unknown_effect`、`tool.effect_unknown`、`tool.reconciled`、`receipt`（09-16）
 - 自动化场景表：每个已由 Runtime `test_native_tool_recovery_regression.py` 覆盖的行对应稳定
-  `scenario_id`（本轮锁定 **12** 条）
+  `scenario_id`（09-15 锁定 12 条，09-16 加 4 条，共 **16** 条）
 - Fixture + 薄测试：断言每个 `scenario_id` 被现有恢复回归引用/覆盖
 
 ## 术语
@@ -34,6 +34,9 @@ deadline / idempotency wire 语义。
 | `lease` | Worker 对 operation 的租约占用。租约过期后可由新 worker 接管；旧 lease owner 的迟到结果不得覆盖新结果。 |
 | `idempotency_key` | v2 operation 幂等键。相同 task + 相同内容 + 相同 key → 返回原 operation；相同 key 但内容变更 → 冲突拒绝。本契约不改动该 wire 语义。 |
 | `deadline` / `deadline_at` | v2 operation UTC 截止时间（当前实现约五分钟）。到期产生 `tool.expired` 与失败恢复；桌面亦独立拒绝过期命令（如 `DEADLINE_EXPIRED`）。本契约不改动该 wire 语义。 |
+| `unknown_effect` | operation 第三个未完成态（2026-09-16）：命令已发到桌面、结果没回来。只对有副作用的操作（`local.write`、非 `shell_read` 的 shell）；Runtime 不重发、不算成功、不恢复模型，等桌面回来问回执。 |
+| `receipt` | **桌面的义务**：账本对一条 `operationId` 的回答（[Tool Gateway v1 §8](tool-gateway-v1.md)）：`unknown` / `dispatched` / `settled`。能力清单 `toolGateway.receipts: 1` 表示这台桌面记账。 |
+| `tool.effect_unknown` / `tool.reconciled` | Runtime 事件：进入 `unknown_effect`；用回执定性（`settled` 取回执结果 / `not_received` 回 pending 重发）。 |
 
 相关事件/状态（恢复矩阵常用，非本轮新词汇）：`tool.waiting`、`tool.result`、
 `native.loop_detected`、operation `pending` / `cancelled` / `failed`。
@@ -59,6 +62,10 @@ deadline / idempotency wire 语义。
 | `offline_deadline_expire_late_success_rejected` | 离线直至 deadline | operation failed；失败 tool result 只恢复一次；迟到成功不覆盖 |
 | `duplicate_result_delivery_idempotent` | 完成前后重复回传 | 保留首次结果；不重复调模型；`tool.result` 一次 |
 | `expired_worker_lease_recovered_stale_rejected` | worker 租约过期被接管 | 新 worker 执行；旧 worker 结果拒绝 |
+| `write_dispatched_then_lost_ack_reconciled_from_receipt` | 写操作发出后 ack 丢失，桌面回执 `settled` | `unknown_effect`；不重发、不恢复模型；回执结果即结果；桌面只执行 1 次 |
+| `write_dispatched_never_reached_desktop_reexecuted` | 写操作发出后 ack 丢失，桌面回执 `unknown` | 回 pending，同一 operation / `idempotency_key` 重发 |
+| `write_dispatched_lost_ack_without_receipts_expires_effect_unknown` | 写操作发出后 ack 丢失，桌面不记账（老版本） | 等到 deadline，失败结果 `code=EFFECT_UNKNOWN`；永不重发 |
+| `read_dispatched_then_lost_ack_retried` | 读操作发出后 ack 丢失 | 无副作用 → 照旧 pending + `tool.gateway_waiting` → 重发 |
 
 相邻但**不属于**本 fixture 锁定集（仍由 Runtime `tests/test_tool_transport.py` 等覆盖）：
 v2 同 key 幂等创建、同 key 内容冲突拒绝。本契约不声称改写那些协议测试。
@@ -69,7 +76,7 @@ v2 同 key 幂等创建、同 key 内容冲突拒绝。本契约不声称改写�
 
 1. **物理断网**（真实网络断开，非测试替身）
 2. **桌面进程崩溃 / Mac 休眠退出**（含写入后、结果回传前的崩溃窗口）
-3. **write-then-lost-ack** 现场验收（副作用可能已发生但 ack 丢失；不宣称 exactly-once）
+3. **write-then-lost-ack** 现场验收（自动化已覆盖第 13–16 条；真断网、真装机的现场仍未验；不宣称 exactly-once）
 4. 变更 `deadline` / `idempotency_key` wire 语义或生产恢复状态机行为
 
 现场保留项见 [Native Tool 恢复验收补充](../native-tool-recovery-acceptance-2026-09-13.md)。

@@ -27,6 +27,7 @@ import {
   LOCAL_TOOL_PROTOCOL,
   TOOL_GATEWAY_MANIFEST,
 } from './tool-gateway'
+import type { ToolReceiptLedger } from './tool-receipts'
 export { LOCAL_TOOL_PROTOCOL } from './tool-gateway'
 
 type ProjectionProvider = {
@@ -97,6 +98,7 @@ export const SUPPORTED_COMMANDS = [
   'capabilities',
   'prompt',
   'executeToolOperation',
+  'toolOperationReceipt',
   'steer',
   'followUp',
   'abort',
@@ -265,6 +267,16 @@ class RemoteControlManager {
   private routineHost: RemoteRoutineHost | null = null
   private imageHost: RemoteImageHost | null = null
   private videoHost: RemoteVideoHost | null = null
+  private receipts: ToolReceiptLedger | null = null
+
+  /** 工具操作账本(Tool Gateway v1 receipts)。不挂就不宣告 receipts,控制面按老桌面对待。 */
+  setToolReceiptLedger(ledger: ToolReceiptLedger | null): void {
+    this.receipts = ledger
+  }
+
+  private toolGatewayManifest(): Record<string, unknown> {
+    return { ...TOOL_GATEWAY_MANIFEST, ...(this.receipts ? { receipts: 1 } : {}) }
+  }
 
   setStatusListener(cb: (snap: RemoteControlSnapshot) => void): void {
     this.statusListener = cb
@@ -526,7 +538,7 @@ class RemoteControlManager {
             localTools: Object.keys(LOCAL_TOOL_HANDLERS),
             localFileMaxBytes: LOCAL_FILE_MAX_BYTES,
             toolProtocol: LOCAL_TOOL_PROTOCOL,
-            toolGateway: TOOL_GATEWAY_MANIFEST,
+            toolGateway: this.toolGatewayManifest(),
           })
           break
         case 'prompt':
@@ -534,12 +546,46 @@ class RemoteControlManager {
           this.reply(msg.id)
           break
         case 'executeToolOperation': {
+          // 先记账再执行:回执写不进盘就不做 —— 做了没账,控制面断线后就永远不知道这条写落地没有。
+          const operationId = String(msg.operationId ?? msg.operation_id ?? '').trim()
+          const ledger = operationId ? this.receipts : null
+          if (ledger) {
+            try {
+              ledger.recordDispatch(msg)
+            } catch (error) {
+              this.replyError(msg.id, `tool receipt ledger is unavailable: ${errMsg(error)}`, 'RECEIPT_UNAVAILABLE')
+              break
+            }
+          }
           const result = await executeLocalToolOperation(msg)
+          if (ledger) {
+            try {
+              ledger.recordSettled(
+                operationId,
+                'error' in result ? { ok: false, error: result.error, code: result.code } : { ok: true, result: result.result },
+              )
+            } catch (error) {
+              appendAppLog('warn', 'tool.receipt', `failed to record the settled receipt for ${operationId}`, normalizeError(error))
+            }
+          }
           if ('error' in result) {
             this.replyError(msg.id, result.error, result.code)
             break
           }
           this.reply(msg.id, result)
+          break
+        }
+        case 'toolOperationReceipt': {
+          if (!this.receipts) {
+            this.replyError(msg.id, 'this desktop does not keep tool operation receipts', 'RECEIPTS_UNAVAILABLE')
+            break
+          }
+          const operationId = String(msg.operationId ?? msg.operation_id ?? '').trim()
+          if (!operationId) {
+            this.replyError(msg.id, 'operationId is required', 'INVALID_TOOL_OPERATION')
+            break
+          }
+          this.reply(msg.id, this.receipts.lookup(operationId))
           break
         }
         case 'steer':

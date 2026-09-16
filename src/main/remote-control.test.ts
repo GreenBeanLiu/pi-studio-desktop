@@ -56,6 +56,7 @@ vi.mock('./model-catalog', () => ({
 
 import { HOST_EVENT_CHANNELS, LOCAL_TOOL_PROTOCOL, SUPPORTED_COMMANDS, remoteControl } from './remote-control'
 import { executeLocalToolOperation } from './tool-gateway'
+import { ToolReceiptLedger } from './tool-receipts'
 
 type Listener = (event: { data?: string; code?: number; reason?: string }) => void
 
@@ -119,6 +120,7 @@ beforeEach(() => {
   mocks.loadCachedProviderLabels.mockReturnValue({ providerLabels: {} })
   ;(globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket
   remoteControl.setProjectionProvider(null)
+  remoteControl.setToolReceiptLedger(null)
 })
 
 afterEach(() => {
@@ -239,6 +241,79 @@ describe('remote-control command protocol', () => {
         data: { operationId: 'toolop-1', ok: true, result: { stdout: 'ok', exitCode: 0 } },
       }),
     )
+  })
+
+  // 控制面断线后回来问"这条写做了没有":账本里 dispatched 在执行前落盘,settled 带着结果在执行后落盘。
+  // 没挂账本的桌面(老版本)不宣告 receipts,问回执得到 RECEIPTS_UNAVAILABLE,控制面按老桌面等 deadline。
+  describe('tool operation receipts', () => {
+    let dir: string
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'pi-remote-receipts-'))
+      remoteControl.setToolReceiptLedger(new ToolReceiptLedger(join(dir, 'tool-operations.jsonl')))
+    })
+
+    afterEach(() => {
+      remoteControl.setToolReceiptLedger(null)
+      rmSync(dir, { recursive: true, force: true })
+    })
+
+    it('advertises receipts in the tool gateway manifest once a ledger is attached', async () => {
+      const ws = await connect()
+      ws.receive({ id: 'cap', type: 'capabilities' })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('cap'))
+      expect((ws.lastSent().data as { toolGateway: Record<string, unknown> }).toolGateway).toMatchObject({ manifestVersion: 1, receipts: 1 })
+    })
+
+    it('answers unknown for an operation it never received', async () => {
+      const ws = await connect()
+      ws.receive({ id: 'r0', type: 'toolOperationReceipt', operationId: 'toolop-never' })
+      await vi.waitFor(() => expect(ws.lastSent()).toEqual({ type: 'result', id: 'r0', data: { operationId: 'toolop-never', state: 'unknown' } }))
+    })
+
+    it('settles the receipt with the result the desktop produced, so a lost ack can be reconciled', async () => {
+      mocks.bash.mockResolvedValue({ stdout: 'ok', exitCode: 0 })
+      const ws = await connect()
+      ws.receive({
+        id: 'exec', type: 'executeToolOperation', operationId: 'toolop-w1', toolName: 'shell.exec',
+        arguments: { command: 'touch a' }, audit: { task_id: 'task-9', subtask_id: 'sub-1', principal: 'account:acc-1' },
+      })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('exec'))
+      ws.receive({ id: 'r1', type: 'toolOperationReceipt', operationId: 'toolop-w1' })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('r1'))
+      expect(ws.lastSent().data).toMatchObject({
+        operationId: 'toolop-w1', state: 'settled', ok: true, result: { stdout: 'ok', exitCode: 0 },
+        toolName: 'shell.exec', taskId: 'task-9', subtaskId: 'sub-1', principal: 'account:acc-1',
+      })
+      const lines = readFileSync(join(dir, 'tool-operations.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { kind: string })
+      expect(lines.map((line) => line.kind)).toEqual(['dispatched', 'settled'])
+    })
+
+    it('records rejected operations as settled failures with their code', async () => {
+      const ws = await connect()
+      ws.receive({ id: 'bad', type: 'executeToolOperation', operationId: 'toolop-bad', toolName: 'local.nope' })
+      await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({ id: 'bad', code: 'UNSUPPORTED_TOOL' }))
+      ws.receive({ id: 'r2', type: 'toolOperationReceipt', operationId: 'toolop-bad' })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('r2'))
+      expect(ws.lastSent().data).toMatchObject({ state: 'settled', ok: false, code: 'UNSUPPORTED_TOOL' })
+    })
+
+    it('refuses to execute when the dispatch receipt cannot be written', async () => {
+      // a directory where the ledger file should be: nothing can be appended, so nothing may run
+      remoteControl.setToolReceiptLedger(new ToolReceiptLedger(dir))
+      mocks.bash.mockResolvedValue({ stdout: 'ok', exitCode: 0 })
+      const ws = await connect()
+      ws.receive({ id: 'exec2', type: 'executeToolOperation', operationId: 'toolop-w2', toolName: 'shell.exec', arguments: { command: 'touch b' } })
+      await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({ id: 'exec2', code: 'RECEIPT_UNAVAILABLE' }))
+      expect(mocks.bash).not.toHaveBeenCalled()
+    })
+
+    it('tells a controller when this desktop keeps no receipts', async () => {
+      remoteControl.setToolReceiptLedger(null)
+      const ws = await connect()
+      ws.receive({ id: 'r3', type: 'toolOperationReceipt', operationId: 'toolop-x' })
+      await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({ id: 'r3', code: 'RECEIPTS_UNAVAILABLE' }))
+    })
   })
 
   it('accepts the bash tool alias and args payload for local tool operations', async () => {

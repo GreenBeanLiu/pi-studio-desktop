@@ -9,6 +9,7 @@ import { registerIpcHandlers } from './ipc'
 import { clearAllGitRunChanges } from './git-diff'
 import { piClientManager } from './pi-client'
 import { remoteControl } from './remote-control'
+import { ToolReceiptLedger } from './tool-receipts'
 import { loadSettings } from './settings'
 import { appendAppLog, attachWindowLoggers, installProcessLoggers, normalizeError } from './app-log'
 import { isMissingUpdateChannel } from './update-error'
@@ -287,6 +288,8 @@ app.whenReady().then(() => {
   syncBundledSkills()
   syncBundledExtensions()
   piClientManager.warmup()
+  // 工具操作账本:控制面断线后回来问"这条写做了没有",答案在这里(Tool Gateway v1 receipts)
+  remoteControl.setToolReceiptLedger(new ToolReceiptLedger(join(app.getPath('userData'), 'pi-agent', 'tool-operations.jsonl')))
   // 上次开着远程控制就自动重连中转
   if (loadSettings().remoteEnabled) void remoteControl.enable()
   if (!is.dev) {

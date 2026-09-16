@@ -51,7 +51,8 @@
                 "WORKSPACE_MISMATCH",
                 "EEXIST",
                 "ENOENT",
-                "LOCAL_FILE_ERROR"
+                "LOCAL_FILE_ERROR",
+                "RECEIPT_UNAVAILABLE"
               ]
             },
             "message": { "type": "string" }
