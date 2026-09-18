@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import type { Routine, RoutineRun, RoutineStep, RoutineStepResult } from './routines'
-import type { WorkflowDeleteIntent } from './workflow-delete-outbox'
+import type { RoutineDeleteIntent } from './routine-delete-outbox'
 
 type SqlValue = string | number | bigint | null | Uint8Array
 type SqlRow = Record<string, SqlValue>
@@ -24,7 +24,7 @@ type DatabaseSyncInstance = {
 
 export type RoutineStoreData = { routines: Routine[]; runs: RoutineRun[] }
 
-export type WorkflowRunEventType =
+export type RoutineRunEventType =
   | 'run.started'
   | 'run.running'
   | 'run.waiting'
@@ -37,21 +37,25 @@ export type WorkflowRunEventType =
   | 'step.completed'
   | 'step.failed'
 
-export type WorkflowRunEvent = {
+export type RoutineRunEvent = {
   seq: number
   runId: string
   workflowId: string
-  type: WorkflowRunEventType
+  type: RoutineRunEventType
   stepId: string | null
   payload: Record<string, unknown>
   createdAt: number
 }
 
-export type NewWorkflowRunEvent = Omit<WorkflowRunEvent, 'seq' | 'createdAt'> & {
+export type NewRoutineRunEvent = Omit<RoutineRunEvent, 'seq' | 'createdAt'> & {
   createdAt?: number
 }
 
-const TERMINAL_WORKFLOW_EVENT_TYPES = new Set<WorkflowRunEventType>([
+export type WorkflowRunEventType = RoutineRunEventType
+export type WorkflowRunEvent = RoutineRunEvent
+export type NewWorkflowRunEvent = NewRoutineRunEvent
+
+const TERMINAL_ROUTINE_EVENT_TYPES = new Set<RoutineRunEventType>([
   'run.completed',
   'run.failed',
   'run.timed_out',
@@ -61,7 +65,7 @@ const TERMINAL_WORKFLOW_EVENT_TYPES = new Set<WorkflowRunEventType>([
 
 export class RoutineSqliteUnavailableError extends Error {}
 
-type PendingWorkflowDelete = {
+type PendingRoutineDelete = {
   origin: string
   workflowId: string
 }
@@ -266,7 +270,7 @@ export class RoutineDatabase {
     return { routines, runs }
   }
 
-  save(store: RoutineStoreData, deleted?: PendingWorkflowDelete): void {
+  save(store: RoutineStoreData, deleted?: PendingRoutineDelete): void {
     this.transaction(() => {
       this.db.exec(`
         DELETE FROM workflow_step_runs;
@@ -290,7 +294,7 @@ export class RoutineDatabase {
     })
   }
 
-  claimWorkflowDeletes(origin: string, installationId: string): WorkflowDeleteIntent[] {
+  claimRoutineDeletes(origin: string, installationId: string): RoutineDeleteIntent[] {
     return this.transaction(() => {
       this.db
         .prepare(
@@ -314,11 +318,11 @@ export class RoutineDatabase {
     })
   }
 
-  ackWorkflowDelete(id: number): void {
+  ackRoutineDelete(id: number): void {
     this.db.prepare("DELETE FROM sync_outbox WHERE id = ? AND kind = 'workflow_delete'").run(id)
   }
 
-  importWorkflowDeletes(entries: readonly WorkflowDeleteIntent[]): void {
+  importRoutineDeletes(entries: readonly RoutineDeleteIntent[]): void {
     if (entries.length === 0) return
     this.transaction(() => {
       const insert = this.db.prepare(
@@ -344,7 +348,7 @@ export class RoutineDatabase {
     return optionalString(this.db.prepare('SELECT value FROM sync_state WHERE key = ?').get(key)?.value ?? null)
   }
 
-  appendWorkflowRunEvent(event: NewWorkflowRunEvent): WorkflowRunEvent {
+  appendRoutineRunEvent(event: NewRoutineRunEvent): RoutineRunEvent {
     const createdAt = event.createdAt ?? Date.now()
     const result = this.db
       .prepare(
@@ -356,7 +360,7 @@ export class RoutineDatabase {
     return { ...event, seq: Number(result.lastInsertRowid), createdAt }
   }
 
-  loadWorkflowRunEvents(runId?: string): WorkflowRunEvent[] {
+  loadRoutineRunEvents(runId?: string): RoutineRunEvent[] {
     const rows = runId
       ? this.db.prepare('SELECT * FROM workflow_run_events WHERE workflow_run_id = ? ORDER BY seq').all(runId)
       : this.db.prepare('SELECT * FROM workflow_run_events ORDER BY seq').all()
@@ -364,14 +368,14 @@ export class RoutineDatabase {
       seq: requiredNumber(row.seq),
       runId: requiredString(row.workflow_run_id),
       workflowId: requiredString(row.workflow_id),
-      type: requiredString(row.type) as WorkflowRunEventType,
+      type: requiredString(row.type) as RoutineRunEventType,
       stepId: optionalString(row.step_id) ?? null,
       payload: JSON.parse(requiredString(row.payload_json)) as Record<string, unknown>,
       createdAt: requiredNumber(row.created_at),
     }))
   }
 
-  interruptOpenWorkflowRuns(now = Date.now()): WorkflowRunEvent[] {
+  interruptOpenRoutineRuns(now = Date.now()): RoutineRunEvent[] {
     const rows = this.db
       .prepare(
         `SELECT DISTINCT started.workflow_run_id, started.workflow_id
@@ -404,7 +408,7 @@ export class RoutineDatabase {
         .all(runId)
       for (const step of openSteps) {
         const startedPayload = JSON.parse(requiredString(step.payload_json)) as Record<string, unknown>
-        this.appendWorkflowRunEvent({
+        this.appendRoutineRunEvent({
           runId,
           workflowId,
           type: 'step.failed',
@@ -419,7 +423,7 @@ export class RoutineDatabase {
           createdAt: now,
         })
       }
-      return this.appendWorkflowRunEvent({
+      return this.appendRoutineRunEvent({
         runId: requiredString(row.workflow_run_id),
         workflowId: requiredString(row.workflow_id),
         type: 'run.interrupted',
@@ -432,7 +436,7 @@ export class RoutineDatabase {
     })
   }
 
-  cancelOpenWorkflowRun(runId: string, workflowId: string, now = Date.now()): WorkflowRunEvent | null {
+  cancelOpenRoutineRun(runId: string, workflowId: string, now = Date.now()): RoutineRunEvent | null {
     const open = this.db
       .prepare(
         `SELECT 1 AS open FROM workflow_run_events
@@ -463,7 +467,7 @@ export class RoutineDatabase {
       .all(runId)
     for (const step of openSteps) {
       const startedPayload = JSON.parse(requiredString(step.payload_json)) as Record<string, unknown>
-      this.appendWorkflowRunEvent({
+      this.appendRoutineRunEvent({
         runId,
         workflowId,
         type: 'step.failed',
@@ -478,7 +482,7 @@ export class RoutineDatabase {
         createdAt: now,
       })
     }
-    return this.appendWorkflowRunEvent({
+    return this.appendRoutineRunEvent({
       runId,
       workflowId,
       type: 'run.cancelled',
@@ -494,10 +498,10 @@ export class RoutineDatabase {
     })
   }
 
-  recoverMissingWorkflowRuns(existingRuns: readonly RoutineRun[]): RoutineRun[] {
+  recoverMissingRoutineRuns(existingRuns: readonly RoutineRun[]): RoutineRun[] {
     const existingIds = new Set(existingRuns.map((run) => run.id))
-    const grouped = new Map<string, WorkflowRunEvent[]>()
-    for (const event of this.loadWorkflowRunEvents()) {
+    const grouped = new Map<string, RoutineRunEvent[]>()
+    for (const event of this.loadRoutineRunEvents()) {
       const events = grouped.get(event.runId) ?? []
       events.push(event)
       grouped.set(event.runId, events)
@@ -506,7 +510,7 @@ export class RoutineDatabase {
     for (const [runId, events] of grouped) {
       if (existingIds.has(runId)) continue
       const started = events.find((event) => event.type === 'run.started')
-      const terminal = [...events].reverse().find((event) => TERMINAL_WORKFLOW_EVENT_TYPES.has(event.type))
+      const terminal = [...events].reverse().find((event) => TERMINAL_ROUTINE_EVENT_TYPES.has(event.type))
       if (!started || !terminal) continue
       const stepStarts = new Map(
         events.filter((event) => event.type === 'step.started' && event.stepId).map((event) => [event.stepId!, event]),
@@ -596,7 +600,7 @@ export class RoutineDatabase {
     return recovered.sort((left, right) => right.startedAt - left.startedAt)
   }
 
-  pruneWorkflowRunEvents(maxTerminalRuns: number): void {
+  pruneRoutineRunEvents(maxTerminalRuns: number): void {
     const terminalRunIds = this.db
       .prepare(
         `SELECT workflow_run_id, MAX(seq) AS last_seq

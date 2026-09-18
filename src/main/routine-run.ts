@@ -1,24 +1,24 @@
-export type WorkflowRunState = 'queued' | 'running' | 'waiting' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
+export type RoutineRunState = 'queued' | 'running' | 'waiting' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
 
-export type WorkflowRunResult = {
+export type RoutineRunResult = {
   state: 'completed' | 'failed' | 'cancelled'
   error?: unknown
 }
 
-export class WorkflowDisposeTimeoutError extends Error {
+export class RoutineDisposeTimeoutError extends Error {
   constructor(timeoutMs: number, options?: ErrorOptions) {
-    super(`Workflow run did not stop within ${timeoutMs}ms`, options)
-    this.name = 'WorkflowDisposeTimeoutError'
+    super(`Routine run did not stop within ${timeoutMs}ms`, options)
+    this.name = 'RoutineDisposeTimeoutError'
   }
 }
 
-/** One owned workflow execution. Its result is closed and never rejects. */
-export class WorkflowRunHandle {
-  readonly result: Promise<WorkflowRunResult>
+/** One owned routine execution. Its result is closed and never rejects. */
+export class RoutineRunHandle {
+  readonly result: Promise<RoutineRunResult>
   readonly cleanup: Promise<void>
   private readonly controller = new AbortController()
-  private currentState: WorkflowRunState = 'queued'
-  private settle!: (result: WorkflowRunResult) => void
+  private currentState: RoutineRunState = 'queued'
+  private settle!: (result: RoutineRunResult) => void
   private settleCleanup!: () => void
   private settled = false
   private cleanupSettled = false
@@ -31,7 +31,7 @@ export class WorkflowRunHandle {
     private readonly forceCleanup: () => Promise<void> = () => Promise.resolve(),
     private readonly onForceCleanupError?: (error: unknown) => void,
   ) {
-    this.result = new Promise<WorkflowRunResult>((resolve) => {
+    this.result = new Promise<RoutineRunResult>((resolve) => {
       this.settle = resolve
     })
     this.cleanup = new Promise<void>((resolve) => {
@@ -57,7 +57,7 @@ export class WorkflowRunHandle {
       })
   }
 
-  state(): WorkflowRunState {
+  state(): RoutineRunState {
     return this.currentState
   }
 
@@ -82,7 +82,7 @@ export class WorkflowRunHandle {
     await this.cleanup
   }
 
-  private finish(result: WorkflowRunResult): void {
+  private finish(result: RoutineRunResult): void {
     if (this.settled) return
     this.settled = true
     if (this.cancelTimer) clearTimeout(this.cancelTimer)
@@ -113,7 +113,12 @@ export class WorkflowRunHandle {
     this.completeCleanup()
     this.finish({
       state: 'cancelled',
-      error: new WorkflowDisposeTimeoutError(this.disposeTimeoutMs),
+      error: new RoutineDisposeTimeoutError(this.disposeTimeoutMs),
     })
   }
 }
+
+export type WorkflowRunState = RoutineRunState
+export type WorkflowRunResult = RoutineRunResult
+export const WorkflowDisposeTimeoutError = RoutineDisposeTimeoutError
+export const WorkflowRunHandle = RoutineRunHandle

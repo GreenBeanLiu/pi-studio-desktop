@@ -64,7 +64,7 @@ export function syncBundledSkills(): void {
 }
 
 /**
- * 内置扩展。注意 syncSubagentWorkflow 也往 <agentDir>/extensions/ 写(subagent/),
+ * 内置扩展。注意 syncSubagentRoles 也往 <agentDir>/extensions/ 写(subagent/),
  * 两边按条目名各管各的,不会互相覆盖。
  */
 export function syncBundledExtensions(): void {

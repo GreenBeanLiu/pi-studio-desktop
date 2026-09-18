@@ -45,7 +45,7 @@ export const DEFAULT_BINDINGS: ShortcutBinding[] = [
     action: 'view.routines',
     combo: 'Mod+Digit2',
     repeat: true,
-    help: { section: '导航', label: '切换到 Workflow' },
+    help: { section: '导航', label: '切换到例程' },
   },
   {
     id: 'view-imagegen',

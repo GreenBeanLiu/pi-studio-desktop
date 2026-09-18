@@ -4,7 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { appendAppLog, normalizeError } from './app-log'
 import type { Routine, RoutineRun, RoutineStep, RoutineStepResult } from './routines'
-import type { WorkflowDeleteOutbox } from './workflow-delete-outbox'
+import type { RoutineDeleteOutbox } from './routine-delete-outbox'
 import { cloudFetch } from './cloud-fetch'
 
 declare const __TRAILAI_API_URL__: string
@@ -259,7 +259,7 @@ async function syncSnapshot(snapshot: RoutineStoreSnapshot): Promise<void> {
     if (failure) failures.push(failure)
   }
 
-  for (const intent of deleteOutbox?.claimWorkflowDeletes(
+  for (const intent of deleteOutbox?.claimRoutineDeletes(
     routineSyncOrigin(),
     credential.installationId,
   ) ?? []) {
@@ -271,7 +271,7 @@ async function syncSnapshot(snapshot: RoutineStoreSnapshot): Promise<void> {
       ),
       'Deleting remote workflow',
     )
-    deleteOutbox?.ackWorkflowDelete(intent.id)
+    deleteOutbox?.ackRoutineDelete(intent.id)
   }
 
   const aggregated = aggregateSyncFailure(failures)
@@ -280,7 +280,7 @@ async function syncSnapshot(snapshot: RoutineStoreSnapshot): Promise<void> {
 
 let pendingSnapshot: RoutineStoreSnapshot | null = null
 let syncLoop: Promise<void> | null = null
-let deleteOutbox: WorkflowDeleteOutbox | null = null
+let deleteOutbox: RoutineDeleteOutbox | null = null
 let retryTimer: NodeJS.Timeout | null = null
 let retryDelayMs = 15_000
 const MAX_RETRY_DELAY_MS = 5 * 60_000
@@ -345,6 +345,6 @@ export function queueRoutineCloudSync(snapshot: RoutineStoreSnapshot): void {
   startSyncLoop()
 }
 
-export function configureRoutineCloudOutbox(outbox: WorkflowDeleteOutbox): void {
+export function configureRoutineCloudOutbox(outbox: RoutineDeleteOutbox): void {
   deleteOutbox = outbox
 }

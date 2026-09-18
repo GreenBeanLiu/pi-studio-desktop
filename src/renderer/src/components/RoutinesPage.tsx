@@ -970,7 +970,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
         <section className={`${styles.col} ${styles.left}`}>
           <div className={styles.colTitle}>
             <CalendarClock size={16} />
-            Workflows ({routines.length})
+            例程 ({routines.length})
             {activeIds.length > 0 && (
               <Tag color="processing" style={{ marginLeft: 8 }}>
                 正在运行 {activeIds.length}
@@ -992,7 +992,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
 
           {form && (
             <Drawer
-              title={form.id ? '编辑工作流' : '新建工作流'}
+              title={form.id ? '编辑例程' : '新建例程'}
               open
               placement="right"
               width={560}
@@ -1004,7 +1004,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
                 <Input
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Workflow name"
+                  placeholder="例程名称"
                 />
                 <span className={styles.label}>本次选题 / Brief</span>
                 <Input.TextArea

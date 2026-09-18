@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { WorkflowDisposeTimeoutError, WorkflowRunHandle } from './workflow-run'
+import { RoutineDisposeTimeoutError, RoutineRunHandle } from './routine-run'
 
-describe('WorkflowRunHandle', () => {
+describe('RoutineRunHandle', () => {
   it('returns a closed failed result instead of rejecting', async () => {
     const failure = new Error('node failed')
-    const handle = new WorkflowRunHandle(async () => {
+    const handle = new RoutineRunHandle(async () => {
       throw failure
     })
 
@@ -17,7 +17,7 @@ describe('WorkflowRunHandle', () => {
 
   it('owns cancellation and waits for cleanup on dispose', async () => {
     let cleaned = false
-    const handle = new WorkflowRunHandle(
+    const handle = new RoutineRunHandle(
       (signal) =>
         new Promise<void>((resolve) => {
           signal.addEventListener(
@@ -41,7 +41,7 @@ describe('WorkflowRunHandle', () => {
 
   it('logically terminates and closes the result when an executor ignores cancellation', async () => {
     let forceCleaned = false
-    const handle = new WorkflowRunHandle(
+    const handle = new RoutineRunHandle(
       () => new Promise<void>(() => {}),
       5,
       async () => {
@@ -54,7 +54,7 @@ describe('WorkflowRunHandle', () => {
     expect(handle.state()).toBe('cancelled')
     await expect(handle.result).resolves.toEqual({
       state: 'cancelled',
-      error: expect.any(WorkflowDisposeTimeoutError),
+      error: expect.any(RoutineDisposeTimeoutError),
     })
     await expect(handle.cleanup).resolves.toBeUndefined()
     expect(forceCleaned).toBe(true)
@@ -64,7 +64,7 @@ describe('WorkflowRunHandle', () => {
     const cleanupFailure = new Error('process still alive')
     let reported: unknown
     let settled = false
-    const handle = new WorkflowRunHandle(
+    const handle = new RoutineRunHandle(
       () => new Promise<void>(() => {}),
       5,
       async () => { throw cleanupFailure },
@@ -86,7 +86,7 @@ describe('WorkflowRunHandle', () => {
     let resolveCleanup!: () => void
     const execution = new Promise<void>((resolve) => { resolveExecution = resolve })
     const cleanup = new Promise<void>((resolve) => { resolveCleanup = resolve })
-    const handle = new WorkflowRunHandle(() => execution, 5, () => cleanup)
+    const handle = new RoutineRunHandle(() => execution, 5, () => cleanup)
     let settled = false
     void handle.result.then(() => { settled = true })
     await new Promise<void>((resolve) => setImmediate(resolve))
@@ -101,7 +101,7 @@ describe('WorkflowRunHandle', () => {
     resolveCleanup()
     await expect(handle.result).resolves.toEqual({
       state: 'cancelled',
-      error: expect.any(WorkflowDisposeTimeoutError),
+      error: expect.any(RoutineDisposeTimeoutError),
     })
   })
 })

@@ -28,16 +28,16 @@ import { readRoutineMaterialFolder } from './routine-material-folder'
 import { inferRoutineImageRole, selectWechatImageAssets, type RoutineImageAsset } from './routine-assets'
 import { configureRoutineCloudOutbox, queueRoutineCloudSync, routineSyncOrigin } from './routine-cloud-sync'
 import { RoutineDatabase, RoutineSqliteUnavailableError } from './routine-database'
-import type { WorkflowRunEventType } from './routine-database'
-import { JsonWorkflowDeleteOutbox } from './workflow-delete-outbox'
-import { WorkflowNodeRegistry } from './workflow-node-registry'
+import type { RoutineRunEventType } from './routine-database'
+import { JsonRoutineDeleteOutbox } from './routine-delete-outbox'
+import { RoutineNodeRegistry } from './routine-node-registry'
 import {
   RoutineScheduler,
   dueSlotKey,
   type RoutineExecutionContext,
   type SchedulableSchedule,
 } from './routine-scheduler'
-import type { WorkflowNodeContext } from './workflow-node-registry'
+import type { RoutineNodeContext } from './routine-node-registry'
 import { cloudFetch } from './cloud-fetch'
 
 /**
@@ -177,7 +177,7 @@ const storePath = (): string => join(app.getPath('userData'), 'routines.json')
 const databasePath = (): string => join(app.getPath('userData'), 'routines.sqlite3')
 const deleteOutboxPath = (): string => join(app.getPath('userData'), 'cloud-sync-outbox.json')
 let routineDatabase: RoutineDatabase | null = null
-let jsonDeleteOutbox: JsonWorkflowDeleteOutbox | null = null
+let jsonDeleteOutbox: JsonRoutineDeleteOutbox | null = null
 
 type PendingReview = {
   routineId: string
@@ -961,9 +961,9 @@ type RoutineNodeDependencies = {
 
 function createRoutineNodeRegistry(
   dependencies: RoutineNodeDependencies,
-): WorkflowNodeRegistry<RoutineNodeMap, WorkflowNodeContext> {
+): RoutineNodeRegistry<RoutineNodeMap, RoutineNodeContext> {
   const { routine, runContext, channels, session, markTimeout } = dependencies
-  return new WorkflowNodeRegistry<RoutineNodeMap, WorkflowNodeContext>()
+  return new RoutineNodeRegistry<RoutineNodeMap, RoutineNodeContext>()
     .register({
       type: 'folder-input',
       ...routineNodeSchemas('folder-input'),
@@ -1088,8 +1088,8 @@ async function executeRoutine(
     triggerStamp: pathStamp(triggeredAt),
     products: new Map(),
   }
-  const journal = (type: WorkflowRunEventType, stepId: string | null, payload: Record<string, unknown>): void => {
-    routineDatabase?.appendWorkflowRunEvent({
+  const journal = (type: RoutineRunEventType, stepId: string | null, payload: Record<string, unknown>): void => {
+    routineDatabase?.appendRoutineRunEvent({
       runId,
       workflowId: routine.id,
       type,
@@ -1267,7 +1267,7 @@ async function executeRoutine(
   liveStepProgress.delete(routine.id)
   store.runs = [run, ...store.runs].slice(0, MAX_RUNS_KEPT)
   saveStore(store)
-  routineDatabase?.pruneWorkflowRunEvents(MAX_RUNS_KEPT)
+  routineDatabase?.pruneRoutineRunEvents(MAX_RUNS_KEPT)
 
   // 兜底汇总通知(notify 节点之外的保险):本地弹窗 + 默认渠道一张卡片
   const shouldNotify = routine.notify === 'always' || (routine.notify === 'error' && status !== 'ok')
@@ -1326,13 +1326,13 @@ async function executeRoutine(
 const stepIsComplete = isRoutineStepComplete
 
 export function registerRoutines(): void {
-  jsonDeleteOutbox = new JsonWorkflowDeleteOutbox(deleteOutboxPath(), storePath())
+  jsonDeleteOutbox = new JsonRoutineDeleteOutbox(deleteOutboxPath(), storePath())
   const databaseAlreadyExists = existsSync(databasePath())
   try {
     routineDatabase = new RoutineDatabase(databasePath(), storePath())
     try {
       const legacyDeletes = jsonDeleteOutbox.readAll()
-      routineDatabase.importWorkflowDeletes(legacyDeletes)
+      routineDatabase.importRoutineDeletes(legacyDeletes)
       if (legacyDeletes.length > 0) jsonDeleteOutbox.archiveAndClear()
     } catch (error) {
       appendAppLog(
@@ -1362,14 +1362,14 @@ export function registerRoutines(): void {
     )
   }
   const store = loadStore()
-  const interrupted = routineDatabase?.interruptOpenWorkflowRuns() ?? []
-  const recovered = routineDatabase?.recoverMissingWorkflowRuns(store.runs) ?? []
+  const interrupted = routineDatabase?.interruptOpenRoutineRuns() ?? []
+  const recovered = routineDatabase?.recoverMissingRoutineRuns(store.runs) ?? []
   if (recovered.length > 0 && routineDatabase) {
     store.runs = [...recovered, ...store.runs]
       .sort((left, right) => right.startedAt - left.startedAt)
       .slice(0, MAX_RUNS_KEPT)
     routineDatabase.save(store)
-    routineDatabase.pruneWorkflowRunEvents(MAX_RUNS_KEPT)
+    routineDatabase.pruneRoutineRunEvents(MAX_RUNS_KEPT)
     appendAppLog('warn', 'routines.recovery', 'Recovered workflow runs from the durable journal', {
       runIds: recovered.map((run) => run.id),
       interruptedRunIds: interrupted.map((event) => event.runId),
@@ -1402,9 +1402,9 @@ export function registerRoutines(): void {
     },
     onCancellationTimeout: (routine, runId, startedAt) => {
       cancelPendingReviews(routine.id, '工作流取消宽限期已到，运行已强制关闭')
-      const terminal = routineDatabase?.cancelOpenWorkflowRun(runId, routine.id)
+      const terminal = routineDatabase?.cancelOpenRoutineRun(runId, routine.id)
       const recovered = terminal
-        ? routineDatabase?.recoverMissingWorkflowRuns(store.runs).find((run) => run.id === runId)
+        ? routineDatabase?.recoverMissingRoutineRuns(store.runs).find((run) => run.id === runId)
         : undefined
       const run: RoutineRun = recovered ?? {
         id: runId,
@@ -1420,7 +1420,7 @@ export function registerRoutines(): void {
       liveStepProgress.delete(routine.id)
       store.runs = [run, ...store.runs.filter((candidate) => candidate.id !== run.id)].slice(0, MAX_RUNS_KEPT)
       saveStore(store)
-      routineDatabase?.pruneWorkflowRunEvents(MAX_RUNS_KEPT)
+      routineDatabase?.pruneRoutineRunEvents(MAX_RUNS_KEPT)
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) win.webContents.send('routines:runFinished', run)
       }

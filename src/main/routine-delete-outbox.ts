@@ -1,20 +1,20 @@
 import { copyFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 
-export type WorkflowDeleteIntent = {
+export type RoutineDeleteIntent = {
   id: number
   origin: string
   installationId: string | null
   workflowId: string
 }
 
-export type WorkflowDeleteOutbox = {
-  claimWorkflowDeletes: (origin: string, installationId: string) => WorkflowDeleteIntent[]
-  ackWorkflowDelete: (id: number) => void
+export type RoutineDeleteOutbox = {
+  claimRoutineDeletes: (origin: string, installationId: string) => RoutineDeleteIntent[]
+  ackRoutineDelete: (id: number) => void
   setSyncState: (key: string, value: string) => void
 }
 
 /** Durable fallback and migration reader for the pre-SQLite delete queue. */
-export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
+export class JsonRoutineDeleteOutbox implements RoutineDeleteOutbox {
   constructor(
     private readonly path: string,
     private readonly storePath?: string,
@@ -36,7 +36,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
     this.writeAll(this.withDelete(entries, origin, workflowId))
   }
 
-  readAll(): WorkflowDeleteIntent[] {
+  readAll(): RoutineDeleteIntent[] {
     if (!existsSync(this.path)) return []
     try {
       const raw = JSON.parse(readFileSync(this.path, 'utf8')) as unknown
@@ -65,7 +65,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
         ) {
           throw new Error('delete outbox contains an invalid entry')
         }
-        const candidate = entry as Omit<WorkflowDeleteIntent, 'id'> & { id?: unknown }
+        const candidate = entry as Omit<RoutineDeleteIntent, 'id'> & { id?: unknown }
         return {
           id:
             typeof candidate.id === 'number' && Number.isInteger(candidate.id) && candidate.id > 0
@@ -81,7 +81,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
     }
   }
 
-  claimWorkflowDeletes(origin: string, installationId: string): WorkflowDeleteIntent[] {
+  claimRoutineDeletes(origin: string, installationId: string): RoutineDeleteIntent[] {
     const entries = this.readAll().map((entry) =>
       entry.origin === origin && entry.installationId === null
         ? { ...entry, installationId }
@@ -93,7 +93,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
     )
   }
 
-  ackWorkflowDelete(id: number): void {
+  ackRoutineDelete(id: number): void {
     this.writeAll(this.readAll().filter((entry) => entry.id !== id))
   }
 
@@ -117,15 +117,15 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
     void value
   }
 
-  private writeAll(entries: readonly WorkflowDeleteIntent[]): void {
+  private writeAll(entries: readonly RoutineDeleteIntent[]): void {
     this.atomicWrite(this.path, JSON.stringify(entries, null, 2))
   }
 
   private withDelete(
-    entries: readonly WorkflowDeleteIntent[],
+    entries: readonly RoutineDeleteIntent[],
     origin: string,
     workflowId: string,
-  ): WorkflowDeleteIntent[] {
+  ): RoutineDeleteIntent[] {
     if (entries.some((entry) => entry.origin === origin && entry.workflowId === workflowId)) {
       return [...entries]
     }
@@ -146,7 +146,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
         throw new Error('invalid transaction journal')
       }
       this.atomicWrite(this.storePath, journal.storeJson)
-      this.writeAll(journal.entries as WorkflowDeleteIntent[])
+      this.writeAll(journal.entries as RoutineDeleteIntent[])
       unlinkSync(journalPath)
     } catch (error) {
       throw new Error(`Cloud sync delete transaction recovery failed: ${String(error)}`)
@@ -163,3 +163,7 @@ export class JsonWorkflowDeleteOutbox implements WorkflowDeleteOutbox {
     renameSync(temporary, path)
   }
 }
+
+export type WorkflowDeleteIntent = RoutineDeleteIntent
+export type WorkflowDeleteOutbox = RoutineDeleteOutbox
+export const JsonWorkflowDeleteOutbox = JsonRoutineDeleteOutbox

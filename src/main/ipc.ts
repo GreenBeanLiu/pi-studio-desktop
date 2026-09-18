@@ -23,7 +23,7 @@ import {
   agentConfigDir,
 } from './settings'
 import { piClientManager, resolvePiCliPath, type AgentStatusEvent } from './pi-client'
-import { syncSubagentWorkflow } from './subagent-workflow'
+import { syncSubagentRoles } from './subagent-roles'
 import {
   acceptGitRunChanges,
   beginGitRunChanges,
@@ -491,7 +491,7 @@ export function registerIpcHandlers(): void {
     syncAgentStatusExtension()
     let subagentsAvailable = false
     try {
-      syncSubagentWorkflow(settings.subagentsEnabled)
+      syncSubagentRoles(settings.subagentsEnabled)
       subagentsAvailable = settings.subagentsEnabled
     } catch (err) {
       appendAppLog('warn', 'workspace.open', 'Failed to sync subagent workflow', normalizeError(err))

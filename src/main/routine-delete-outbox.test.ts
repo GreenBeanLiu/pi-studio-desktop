@@ -3,8 +3,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  JsonWorkflowDeleteOutbox,
-} from './workflow-delete-outbox'
+  JsonRoutineDeleteOutbox,
+} from './routine-delete-outbox'
 
 const dirs: string[] = []
 
@@ -12,26 +12,26 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function createOutbox(): { outbox: JsonWorkflowDeleteOutbox; path: string } {
+function createOutbox(): { outbox: JsonRoutineDeleteOutbox; path: string } {
   const dir = mkdtempSync(join(tmpdir(), 'pi-studio-delete-outbox-'))
   dirs.push(dir)
   const path = join(dir, 'cloud-sync-outbox.json')
-  return { outbox: new JsonWorkflowDeleteOutbox(path), path }
+  return { outbox: new JsonRoutineDeleteOutbox(path), path }
 }
 
-describe('JsonWorkflowDeleteOutbox', () => {
+describe('JsonRoutineDeleteOutbox', () => {
   it('retains, claims, and acknowledges deletes in fallback mode', () => {
     const { outbox } = createOutbox()
     outbox.add('https://trail-api.example', 'workflow-1')
     outbox.add('https://trail-api.example', 'workflow-1')
 
-    const claimed = outbox.claimWorkflowDeletes('https://trail-api.example', 'installation-1')
+    const claimed = outbox.claimRoutineDeletes('https://trail-api.example', 'installation-1')
     expect(claimed).toHaveLength(1)
     expect(claimed[0]).toMatchObject({
       workflowId: 'workflow-1',
       installationId: 'installation-1',
     })
-    outbox.ackWorkflowDelete(claimed[0].id)
+    outbox.ackRoutineDelete(claimed[0].id)
     expect(outbox.readAll()).toEqual([])
   })
 
@@ -62,7 +62,7 @@ describe('JsonWorkflowDeleteOutbox', () => {
   it('commits the fallback store and delete intent through a recoverable journal', () => {
     const { path } = createOutbox()
     const storePath = join(path, '..', 'routines.json')
-    const outbox = new JsonWorkflowDeleteOutbox(path, storePath)
+    const outbox = new JsonRoutineDeleteOutbox(path, storePath)
     const store = { routines: [], runs: [] }
 
     outbox.commitDelete(store, 'https://trail-api.example', 'workflow-1')
@@ -75,7 +75,7 @@ describe('JsonWorkflowDeleteOutbox', () => {
   it('fails closed if a prior delete journal remains in the running process', () => {
     const { path } = createOutbox()
     const storePath = join(path, '..', 'routines.json')
-    const outbox = new JsonWorkflowDeleteOutbox(path, storePath)
+    const outbox = new JsonRoutineDeleteOutbox(path, storePath)
     writeFileSync(`${path}.transaction`, '{partial', 'utf8')
 
     expect(() => outbox.assertReady()).toThrow('needs restart recovery')

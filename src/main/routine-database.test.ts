@@ -141,7 +141,7 @@ describe('RoutineDatabase', () => {
       { origin: 'https://trail-api.example', workflowId: 'workflow-legacy' },
     )
 
-    const intents = database.claimWorkflowDeletes('https://trail-api.example', 'installation-1')
+    const intents = database.claimRoutineDeletes('https://trail-api.example', 'installation-1')
     expect(intents).toMatchObject([
       {
         origin: 'https://trail-api.example',
@@ -149,8 +149,8 @@ describe('RoutineDatabase', () => {
         workflowId: 'workflow-legacy',
       },
     ])
-    database.ackWorkflowDelete(intents[0].id)
-    expect(database.claimWorkflowDeletes('https://trail-api.example', 'installation-1')).toEqual([])
+    database.ackRoutineDelete(intents[0].id)
+    expect(database.claimRoutineDeletes('https://trail-api.example', 'installation-1')).toEqual([])
     database.setSyncState('last_success_at', '2026-07-13T00:00:00.000Z')
     expect(database.getSyncState('last_success_at')).toBe('2026-07-13T00:00:00.000Z')
     database.close()
@@ -165,9 +165,9 @@ describe('RoutineDatabase', () => {
       installationId: null,
       workflowId: 'workflow-deleted',
     }
-    database.importWorkflowDeletes([intent, { ...intent, id: 2 }])
+    database.importRoutineDeletes([intent, { ...intent, id: 2 }])
 
-    expect(database.claimWorkflowDeletes('https://trail-api.example', 'installation-1')).toMatchObject([
+    expect(database.claimRoutineDeletes('https://trail-api.example', 'installation-1')).toMatchObject([
       { workflowId: 'workflow-deleted', installationId: 'installation-1' },
     ])
     database.close()
@@ -176,7 +176,7 @@ describe('RoutineDatabase', () => {
   it('journals workflow progress immediately and marks open runs interrupted on restart', () => {
     const paths = createPaths()
     const database = new RoutineDatabase(paths.database, paths.legacy)
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'run-open',
       workflowId: 'workflow-1',
       type: 'run.started',
@@ -184,7 +184,7 @@ describe('RoutineDatabase', () => {
       payload: { triggerSource: 'manual' },
       createdAt: 100,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'run-open',
       workflowId: 'workflow-1',
       type: 'step.started',
@@ -192,7 +192,7 @@ describe('RoutineDatabase', () => {
       payload: { type: 'agent' },
       createdAt: 110,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'run-complete',
       workflowId: 'workflow-1',
       type: 'run.started',
@@ -200,7 +200,7 @@ describe('RoutineDatabase', () => {
       payload: {},
       createdAt: 120,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'run-complete',
       workflowId: 'workflow-1',
       type: 'run.completed',
@@ -209,30 +209,30 @@ describe('RoutineDatabase', () => {
       createdAt: 130,
     })
 
-    expect(database.interruptOpenWorkflowRuns(200)).toMatchObject([
+    expect(database.interruptOpenRoutineRuns(200)).toMatchObject([
       { runId: 'run-open', type: 'run.interrupted', createdAt: 200 },
     ])
-    expect(database.loadWorkflowRunEvents('run-open').map((event) => event.type)).toEqual([
+    expect(database.loadRoutineRunEvents('run-open').map((event) => event.type)).toEqual([
       'run.started',
       'step.started',
       'step.failed',
       'run.interrupted',
     ])
     database.save(fixture())
-    expect(database.loadWorkflowRunEvents('run-open')).toHaveLength(4)
-    expect(database.recoverMissingWorkflowRuns([]).find((run) => run.id === 'run-open')).toMatchObject({
+    expect(database.loadRoutineRunEvents('run-open')).toHaveLength(4)
+    expect(database.recoverMissingRoutineRuns([]).find((run) => run.id === 'run-open')).toMatchObject({
       id: 'run-open',
       status: 'interrupted',
       steps: [{ id: 'step-1', status: 'error' }],
     })
-    expect(database.interruptOpenWorkflowRuns(300)).toEqual([])
+    expect(database.interruptOpenRoutineRuns(300)).toEqual([])
     database.close()
   })
 
   it('rebuilds a missing terminal run projection from the journal', () => {
     const paths = createPaths()
     const database = new RoutineDatabase(paths.database, paths.legacy)
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'journal-only',
       workflowId: 'workflow-1',
       type: 'run.started',
@@ -240,7 +240,7 @@ describe('RoutineDatabase', () => {
       payload: { routineName: 'Recovered', triggerSource: 'manual' },
       createdAt: 100,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'journal-only',
       workflowId: 'workflow-1',
       type: 'step.started',
@@ -248,7 +248,7 @@ describe('RoutineDatabase', () => {
       payload: { position: 0, name: 'Write', type: 'agent' },
       createdAt: 110,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'journal-only',
       workflowId: 'workflow-1',
       type: 'step.completed',
@@ -256,7 +256,7 @@ describe('RoutineDatabase', () => {
       payload: { position: 0, durationMs: 20, outputSummary: 'done' },
       createdAt: 130,
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'journal-only',
       workflowId: 'workflow-1',
       type: 'run.completed',
@@ -265,7 +265,7 @@ describe('RoutineDatabase', () => {
       createdAt: 140,
     })
 
-    expect(database.recoverMissingWorkflowRuns([])).toEqual([
+    expect(database.recoverMissingRoutineRuns([])).toEqual([
       expect.objectContaining({
         id: 'journal-only',
         routineName: 'Recovered',
@@ -280,7 +280,7 @@ describe('RoutineDatabase', () => {
         ],
       }),
     ])
-    expect(database.recoverMissingWorkflowRuns([{ ...fixture().runs[0], id: 'journal-only' }])).toEqual([])
+    expect(database.recoverMissingRoutineRuns([{ ...fixture().runs[0], id: 'journal-only' }])).toEqual([])
     database.close()
   })
 
@@ -288,7 +288,7 @@ describe('RoutineDatabase', () => {
     const paths = createPaths()
     const database = new RoutineDatabase(paths.database, paths.legacy)
     for (const [index, runId] of ['old', 'recent', 'newest'].entries()) {
-      database.appendWorkflowRunEvent({
+      database.appendRoutineRunEvent({
         runId,
         workflowId: 'workflow-1',
         type: 'run.started',
@@ -296,7 +296,7 @@ describe('RoutineDatabase', () => {
         payload: {},
         createdAt: index * 10,
       })
-      database.appendWorkflowRunEvent({
+      database.appendRoutineRunEvent({
         runId,
         workflowId: 'workflow-1',
         type: 'run.completed',
@@ -305,7 +305,7 @@ describe('RoutineDatabase', () => {
         createdAt: index * 10 + 1,
       })
     }
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'open',
       workflowId: 'workflow-1',
       type: 'run.started',
@@ -313,26 +313,26 @@ describe('RoutineDatabase', () => {
       payload: {},
     })
 
-    database.pruneWorkflowRunEvents(2)
+    database.pruneRoutineRunEvents(2)
 
-    expect(database.loadWorkflowRunEvents('old')).toEqual([])
-    expect(database.loadWorkflowRunEvents('recent')).toHaveLength(2)
-    expect(database.loadWorkflowRunEvents('newest')).toHaveLength(2)
-    expect(database.loadWorkflowRunEvents('open')).toHaveLength(1)
+    expect(database.loadRoutineRunEvents('old')).toEqual([])
+    expect(database.loadRoutineRunEvents('recent')).toHaveLength(2)
+    expect(database.loadRoutineRunEvents('newest')).toHaveLength(2)
+    expect(database.loadRoutineRunEvents('open')).toHaveLength(1)
     database.close()
   })
 
   it('force-closes an open step and run when cancellation grace expires', () => {
     const paths = createPaths()
     const database = new RoutineDatabase(paths.database, paths.legacy)
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'forced-run',
       workflowId: 'workflow-1',
       type: 'run.started',
       stepId: null,
       payload: { routineName: 'Forced' },
     })
-    database.appendWorkflowRunEvent({
+    database.appendRoutineRunEvent({
       runId: 'forced-run',
       workflowId: 'workflow-1',
       type: 'step.started',
@@ -340,20 +340,20 @@ describe('RoutineDatabase', () => {
       payload: { position: 0, name: 'Hung node' },
     })
 
-    expect(database.cancelOpenWorkflowRun('forced-run', 'workflow-1')).toMatchObject({
+    expect(database.cancelOpenRoutineRun('forced-run', 'workflow-1')).toMatchObject({
       type: 'run.cancelled',
     })
-    expect(database.loadWorkflowRunEvents('forced-run').map((event) => event.type)).toEqual([
+    expect(database.loadRoutineRunEvents('forced-run').map((event) => event.type)).toEqual([
       'run.started',
       'step.started',
       'step.failed',
       'run.cancelled',
     ])
-    expect(database.recoverMissingWorkflowRuns([])[0]).toMatchObject({
+    expect(database.recoverMissingRoutineRuns([])[0]).toMatchObject({
       status: 'cancelled',
       steps: [{ status: 'cancelled' }],
     })
-    expect(database.cancelOpenWorkflowRun('forced-run', 'workflow-1')).toBeNull()
+    expect(database.cancelOpenRoutineRun('forced-run', 'workflow-1')).toBeNull()
     database.close()
   })
 })

@@ -1,4 +1,4 @@
-import { WorkflowDisposeTimeoutError, WorkflowRunHandle } from './workflow-run'
+import { RoutineDisposeTimeoutError, RoutineRunHandle } from './routine-run'
 import { randomUUID } from 'crypto'
 
 export type SchedulableSchedule =
@@ -81,7 +81,7 @@ export class RoutineScheduler<T extends SchedulableRoutine> {
   private readonly onExecutionError?: (error: unknown, routine: T) => void
   private readonly onCancellationTimeout?: (routine: T, runId: string, startedAt: number) => void
   private readonly onExecutionSettled?: (routine: T, runId: string) => void
-  private readonly running = new Map<string, { routine: T; handle: WorkflowRunHandle }>()
+  private readonly running = new Map<string, { routine: T; handle: RoutineRunHandle }>()
   private readonly queue: T[] = []
 
   constructor(options: RoutineSchedulerOptions<T>) {
@@ -157,7 +157,7 @@ export class RoutineScheduler<T extends SchedulableRoutine> {
       if (!routine.enabled) continue
       const runId = randomUUID()
       const startedAt = Date.now()
-      const handle = new WorkflowRunHandle(
+      const handle = new RoutineRunHandle(
         (signal) =>
           this.execute(routine, {
             runId,
@@ -180,7 +180,7 @@ export class RoutineScheduler<T extends SchedulableRoutine> {
 
       void handle.result
         .then((result) => {
-          if (result.state === 'cancelled' && result.error instanceof WorkflowDisposeTimeoutError) {
+          if (result.state === 'cancelled' && result.error instanceof RoutineDisposeTimeoutError) {
             try {
               this.onCancellationTimeout?.(routine, runId, startedAt)
             } catch (error) {

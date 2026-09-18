@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WorkflowNodeRegistry } from './workflow-node-registry'
+import { RoutineNodeRegistry } from './routine-node-registry'
 
 const context = {
   signal: new AbortController().signal,
@@ -13,9 +13,9 @@ type TestNodes = {
   missing: { input: string; output: string }
 }
 
-describe('WorkflowNodeRegistry', () => {
+describe('RoutineNodeRegistry', () => {
   it('dispatches nodes without a central type switch', async () => {
-    const registry = new WorkflowNodeRegistry<TestNodes>()
+    const registry = new RoutineNodeRegistry<TestNodes>()
       .register({
         type: 'text',
         inputSchema: stringSchema,
@@ -45,14 +45,14 @@ describe('WorkflowNodeRegistry', () => {
       presentation: { label: 'Text', kind: 'transform' as const },
       execute: (input: string) => input,
     }
-    const registry = new WorkflowNodeRegistry<TestNodes>().register(definition)
+    const registry = new RoutineNodeRegistry<TestNodes>().register(definition)
     expect(() => registry.register(definition)).toThrow('already registered')
     await expect(registry.execute('missing', 'hello', context)).rejects.toThrow('Unsupported workflow node')
   })
 
   it('validates values at the node boundary', async () => {
     const schema = { parse: (value: unknown) => String(value).trim() }
-    const registry = new WorkflowNodeRegistry<{ text: { input: string; output: string } }>().register({
+    const registry = new RoutineNodeRegistry<{ text: { input: string; output: string } }>().register({
       type: 'text',
       inputSchema: schema,
       outputSchema: schema,

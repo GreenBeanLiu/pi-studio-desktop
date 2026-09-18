@@ -164,7 +164,7 @@ function resolvePiSubagentExampleDir(): string {
   throw new Error('Could not locate pi subagent extension example (node_modules or resources)')
 }
 
-export function syncSubagentWorkflow(enabled: boolean): void {
+export function syncSubagentRoles(enabled: boolean): void {
   const root = agentConfigDir()
   const extensionDir = join(root, 'extensions', 'subagent')
   const agentsDir = join(root, 'agents')
@@ -187,3 +187,5 @@ export function syncSubagentWorkflow(enabled: boolean): void {
   writeFiles(agentsDir, DEFAULT_AGENTS)
   writeFiles(promptsDir, DEFAULT_PROMPTS)
 }
+
+export const syncSubagentWorkflow = syncSubagentRoles
