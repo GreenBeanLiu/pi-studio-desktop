@@ -153,13 +153,11 @@ export type DesktopApi = {
     steer: (message: string, images?: ImageContent[]) => Promise<void>
     followUp: (message: string, images?: ImageContent[]) => Promise<void>
     abort: () => Promise<void>
-    bash: (command: string) => Promise<unknown>
     extensionUiResponse: (response: ExtensionUiResponse) => Promise<void>
     newSession: () => Promise<{ cancelled: boolean }>
     /** 后台会话(没在看的那些聊天)的运行状态变化。 */
     onSessionActivity: (cb: (event: SessionActivity) => void) => () => void
     getState: () => Promise<RpcSessionState>
-    getMessages: () => Promise<AgentMessage[]>
     getArtifactChunk: (artifactId: string, offsetChars: number) => Promise<ArtifactChunk>
     getAvailableModels: () => Promise<ModelInfo[]>
     getCommands: () => Promise<SlashCommand[]>
@@ -179,7 +177,6 @@ export type DesktopApi = {
     onRuntime: (cb: (snapshot: AgentRuntimeSnapshot) => void) => () => void
     onAgentStatusSnapshot: (cb: (snapshot: AgentRunStatusSnapshot | null) => void) => () => void
     getSessionProjection: () => Promise<SessionProjectionSnapshot>
-    getSessionChanges: (sessionId: string | null, afterSeq: number) => Promise<SessionProjectionChanges>
     onSessionProjection: (cb: (snapshot: SessionProjectionSnapshot) => void) => () => void
   }
   routines: {
@@ -253,7 +250,6 @@ export type DesktopApi = {
       options?: Model3DOptions
     }) => Promise<Model3DHistoryItem | { error: string }>
     generateBlender: (payload: { prompt: string; sourceId?: string }) => Promise<Model3DHistoryItem | { error: string }>
-    blenderHealth: () => Promise<boolean>
     blenderStatus: () => Promise<BlenderSetupStatus>
     setupBlender: () => Promise<BlenderSetupStatus>
     generateCode: (payload: { prompt: string; sourceId?: string }) => Promise<Model3DHistoryItem | { error: string }>

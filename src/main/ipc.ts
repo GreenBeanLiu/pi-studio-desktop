@@ -867,9 +867,6 @@ export function registerIpcHandlers(): void {
     if (cancelled.length > 0) broadcastSessionProjection()
     broadcastAgentStatusSnapshot()
   })
-  ipcMain.handle('pi:bash', (_e, command: unknown) =>
-    piClientManager.bash(parsePrompt(command)),
-  )
   ipcMain.handle(
     'pi:extensionUiResponse',
     (_e, response: ExtensionUiResponse) => {
@@ -914,17 +911,7 @@ export function registerIpcHandlers(): void {
       return sessionProjection.snapshot()
     }
   })
-  ipcMain.handle('pi:getSessionChanges', (_event, sessionId: unknown, afterSeq: unknown) => {
-    if (sessionId !== null && typeof sessionId !== 'string') {
-      throw new TypeError('sessionId must be a string or null')
-    }
-    if (!Number.isSafeInteger(afterSeq) || (afterSeq as number) < 0) {
-      throw new TypeError('afterSeq must be a non-negative safe integer')
-    }
-    return sessionProjection.changes(sessionId, afterSeq as number)
-  })
   ipcMain.handle('pi:getState', () => piClientManager.getState())
-  ipcMain.handle('pi:getMessages', () => piClientManager.getMessages())
   ipcMain.handle('pi:getArtifactChunk', (_event, artifactId: unknown, offsetChars: unknown) => {
     const parsedArtifactId = parseArtifactId(artifactId)
     const parsedOffsetChars = parseNonNegativeSafeInteger(offsetChars, 'offsetChars')

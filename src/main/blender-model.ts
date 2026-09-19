@@ -310,7 +310,6 @@ async function generateBlenderModel(payload: {
 }
 
 export function registerBlenderModel(): void {
-  ipcMain.handle('model3d:blenderHealth', () => blenderAvailable())
   ipcMain.handle('model3d:blenderStatus', () => blenderStatus())
   ipcMain.handle('model3d:setupBlender', () => setupBlender())
   ipcMain.handle('model3d:generateBlender', (_e, payload: { prompt: string; sourceId?: string }) =>
