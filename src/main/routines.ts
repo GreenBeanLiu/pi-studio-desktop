@@ -6,7 +6,7 @@ import { loadSettings } from './settings'
 import { PiRunTimeoutError, runPromptToSettled, type PiAgentRunHandle } from './pi-runtime'
 import { runtimeHost } from './runtime-host'
 import { describeDeniedApprovals } from './approval-gateway'
-import { writeRoutineArtifact, type RoutineArtifactFormat } from './routine-artifact'
+import { writeRoutineArtifact } from './routine-artifact'
 import { prepareReviewedWebSearchExtension } from './web-search-extension'
 import { prepareReviewedWorkspaceMemoryExtension } from './workspace-memory'
 import { generateImage } from './image-gen'
@@ -20,12 +20,8 @@ import { remoteControl } from './remote-control'
 import { parseRoutineSave } from '../shared/ipc/validators'
 import { isRoutineStepComplete } from './routine-step-validation'
 import { latestAssistantFailure, latestAssistantText, type AgentMessage } from './agent-message'
-import type {
-  ImageGenSize as SharedImageGenSize,
-  RoutineStepType as SharedRoutineStepType,
-} from '../shared/ipc/contract'
 import { readRoutineMaterialFolder } from './routine-material-folder'
-import { inferRoutineImageRole, selectWechatImageAssets, type RoutineImageAsset } from './routine-assets'
+import { inferRoutineImageRole, selectWechatImageAssets } from './routine-assets'
 import { configureRoutineCloudOutbox, queueRoutineCloudSync, routineSyncOrigin } from './routine-cloud-sync'
 import { RoutineDatabase, RoutineSqliteUnavailableError } from './routine-database'
 import type { RoutineRunEventType } from './routine-database'
@@ -39,6 +35,16 @@ import {
 } from './routine-scheduler'
 import type { RoutineNodeContext } from './routine-node-registry'
 import { cloudFetch } from './cloud-fetch'
+import {
+  routineNodeSchemas,
+  routineStepSchema,
+  stepProductSchema,
+} from './routine-schema'
+import type { RoutineNodeMap, RoutineStep, RoutineStepType, StepProduct } from './routine-schema'
+
+// 节点 schema 挪到了 routine-schema.ts;老的 `from './routines'` 路径继续有效。
+export { routineStepSchema, stepProductSchema }
+export type { RoutineStep, RoutineStepType }
 
 /**
  * 例行任务(Routines):定时执行一条由类型化节点组成的流水线。
@@ -51,46 +57,6 @@ import { cloudFetch } from './cloud-fetch'
 export type RoutineSchedule = SchedulableSchedule
 
 export type RoutineNotify = 'always' | 'error' | 'never'
-
-export type RoutineStepType = SharedRoutineStepType
-
-export type RoutineStep = {
-  id: string
-  name: string
-  type: RoutineStepType
-  /** agent / imagegen:提示词(支持 {{…}} 变量) */
-  prompt?: string
-  /** imagegen:引擎(本地 ComfyUI 已移除,老数据里的 'comfy' 运行时回退云端) */
-  engine?: 'openai' | 'comfy'
-  /** notify:目标渠道 id */
-  channelId?: string
-  /** notify:消息模板(支持 {{…}} 变量),空则默认发上一步输出 */
-  message?: string
-  /** export:工作区内的相对产物路径;没有扩展名时按 format 自动补全 */
-  path?: string
-  /** export:Markdown 原文或公众号 HTML 片段 */
-  format?: RoutineArtifactFormat
-  /** model3d:图生 3D 服务商 */
-  provider?: 'tripo' | 'hi3d'
-  /**
-   * model3d:输入图的模板(默认 {{prev.imageUrl}});解析成 URL 走图生 3D,否则用 prompt 文生 3D。
-   * app-icon:母图。imagegen:可选参考图,留空即文生图。
-   */
-  imageRef?: string
-  /** imagegen:输出尺寸,留空走服务端默认 */
-  size?: SharedImageGenSize
-  /** app-icon:导出包内显示的应用名称(支持 {{…}} 变量) */
-  appName?: string
-  /** app-icon:需要导出的目标平台 */
-  platforms?: AppIconPlatform[]
-  /** app-icon:需要不透明底图的平台使用的品牌背景色 */
-  backgroundColor?: string
-  /** app-icon:同一个工作流最多保留几次生成;留空或 <=0 就一直堆着 */
-  keepHistory?: number
-  /** dressup:人物图与服装图，支持模板、工作区相对路径、data URL 或公网 URL */
-  personRef?: string
-  garmentRef?: string
-}
 
 export type Routine = {
   id: string
@@ -324,103 +290,6 @@ export function scheduleLabel(s: RoutineSchedule): string {
 }
 
 // ── 变量插值 ─────────────────────────────────────────────────────
-
-/** 每个节点跑完后的产物,供后续节点用 {{…}} 引用 */
-type StepProduct = {
-  output: string
-  imageUrl?: string
-  imageDataUrl?: string
-  artifactPath?: string
-  images?: RoutineImageAsset[]
-}
-
-type RoutineNodeMap = {
-  [K in RoutineStepType]: {
-    input: RoutineStep & { type: K }
-    output: StepProduct
-  }
-}
-
-export function routineStepSchema<K extends RoutineStepType>(type: K): { parse: (value: unknown) => RoutineStep & { type: K } } {
-  return {
-    parse: (value) => {
-      if (!value || typeof value !== 'object') {
-        throw new Error(`工作流节点输入与定义不匹配: ${type}`)
-      }
-      const step = value as Partial<RoutineStep>
-      const optionalStrings: Array<keyof RoutineStep> = [
-        'prompt',
-        'channelId',
-        'message',
-        'path',
-        'imageRef',
-        'appName',
-        'backgroundColor',
-        'personRef',
-        'garmentRef',
-      ]
-      const typedOptionalsValid = optionalStrings.every(
-        (key) => step[key] === undefined || typeof step[key] === 'string',
-      )
-      const platformsValid =
-        step.platforms === undefined ||
-        (Array.isArray(step.platforms) &&
-          step.platforms.every((platform) => ['android', 'ios', 'macos', 'windows'].includes(platform)))
-      if (
-        step.type !== type ||
-        typeof step.id !== 'string' ||
-        !step.id ||
-        typeof step.name !== 'string' ||
-        !typedOptionalsValid ||
-        !platformsValid ||
-        (step.engine !== undefined && !['openai', 'comfy'].includes(step.engine)) ||
-        (step.size !== undefined &&
-          !['256x256', '512x512', '1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', 'auto'].includes(
-            step.size,
-          )) ||
-        (step.provider !== undefined && !['tripo', 'hi3d'].includes(step.provider)) ||
-        (step.format !== undefined && !['html', 'markdown'].includes(step.format)) ||
-        !isRoutineStepComplete(step as RoutineStep)
-      ) {
-        throw new Error(`工作流节点输入无效: ${type}`)
-      }
-      return step as RoutineStep & { type: K }
-    },
-  }
-}
-
-export const stepProductSchema = {
-  parse: (value: unknown): StepProduct => {
-    if (!value || typeof value !== 'object') {
-      throw new Error('工作流节点没有返回有效的 StepProduct')
-    }
-    const product = value as Partial<StepProduct>
-    const optionalStringsValid = [product.imageUrl, product.imageDataUrl, product.artifactPath].every(
-      (field) => field === undefined || typeof field === 'string',
-    )
-    const imagesValid =
-      product.images === undefined ||
-      (Array.isArray(product.images) &&
-        product.images.every(
-          (image) =>
-            !!image &&
-            typeof image.id === 'string' &&
-            image.kind === 'image' &&
-            ['folder', 'generated'].includes(image.source) &&
-            typeof image.name === 'string' &&
-            ['cover', 'inline', 'reference'].includes(image.role) &&
-            typeof image.uri === 'string',
-        ))
-    if (typeof product.output !== 'string' || !optionalStringsValid || !imagesValid) {
-      throw new Error('工作流节点没有返回有效的 StepProduct')
-    }
-    return product as StepProduct
-  },
-}
-
-function routineNodeSchemas<K extends RoutineStepType>(type: K) {
-  return { inputSchema: routineStepSchema(type), outputSchema: stepProductSchema }
-}
 
 type RunContext = {
   routine: Routine
