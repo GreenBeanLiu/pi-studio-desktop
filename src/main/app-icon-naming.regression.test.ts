@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const routines = readFileSync(new URL('./routines.ts', import.meta.url), 'utf8')
+const routineSteps = readFileSync(new URL('./routine-steps.ts', import.meta.url), 'utf8')
 const bundle = readFileSync(new URL('./app-icon-bundle.ts', import.meta.url), 'utf8')
 const routinesPage = readFileSync(
   new URL('../renderer/src/components/RoutinesPage.tsx', import.meta.url),
@@ -16,12 +16,12 @@ const presets = readFileSync(
 // 前一次,想留住结果只能每跑一次就手动改一次文件夹名。
 describe('app icon output naming', () => {
   it('gives every run its own default directory', () => {
-    expect(routines).toContain("if (token === 'trigger.stamp') return ctx.triggerStamp")
-    expect(routines).toContain('function pathStamp')
+    expect(routineSteps).toContain("if (token === 'trigger.stamp') return ctx.triggerStamp")
+    expect(routineSteps).toContain('function pathStamp')
     // 默认模板四处(执行器兜底 + 渲染层新建/编辑/占位)必须都带上时间戳,
     // 漏一处就又会出现"两个节点写同一个目录"
     const template = '.pi-studio/app-icons/{{routine.name}}-{{trigger.stamp}}'
-    expect(routines).toContain(template)
+    expect(routineSteps).toContain(template)
     expect(presets).toContain(template)
     expect(routinesPage.split(template).length - 1).toBeGreaterThanOrEqual(5)
     expect(routinesPage).not.toContain(".pi-studio/app-icons/{{routine.name}}'")
@@ -35,10 +35,10 @@ describe('app icon output naming', () => {
   })
 
   it('keeps the stamp usable as a path segment on Windows too', () => {
-    const start = routines.indexOf('function pathStamp')
+    const start = routineSteps.indexOf('function pathStamp')
     // Windows 检出会把行尾变成 CRLF,写死 '\n}\n' 找不到函数结尾就会一路切到文件末。
-    const end = routines.slice(start).search(/\r?\n\}\r?\n/)
-    const stamp = routines.slice(start, start + end)
+    const end = routineSteps.slice(start).search(/\r?\n\}\r?\n/)
+    const stamp = routineSteps.slice(start, start + end)
     // 本地化时间串带冒号和斜杠,进不了 Windows 路径;只允许数字和一个连字符
     expect(stamp).toContain('getFullYear()')
     expect(stamp).not.toContain('toLocaleString')

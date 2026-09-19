@@ -115,7 +115,7 @@ pnpm run verify
 |------|---------|
 | `src/shared/ipc/contract.ts` | `src/preload/index.ts` 实现 + `src/shared/ipc/validators.test.ts` |
 | 新增 IPC handler | 对应功能模块的 `ipcMain.handle` + `contract.ts` + preload + `src/main/ipc-contracts.test.ts` |
-| 新增 routine 节点类型 | `src/main/routine-node-registry.ts` + 同名 `.test.ts` |
+| 新增 routine 节点类型 | `src/main/routine-schema.ts`（类型 + schema）+ `src/main/routine-steps.ts`（执行器 + 注册） |
 | 新增通知渠道 | `src/main/channels.ts` 加一个 adapter case，**不碰执行器** |
 | 新增需打包资源 | `package.json` 的 `build.files` 白名单 |
 | 架构性改动 | `docs/architecture.md` |

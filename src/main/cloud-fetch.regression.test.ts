@@ -23,7 +23,7 @@ const CLOUD_MODULES = [
   'image-gen.ts',
   'acp-registry.ts',
   'channels.ts',
-  'routines.ts',
+  'routine-steps.ts',
   'routine-cloud-sync.ts',
   'app-icon-bundle.ts',
   'remote-control.ts',
