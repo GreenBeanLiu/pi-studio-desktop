@@ -677,7 +677,7 @@ export type ExtensionUiResponse =
   | { type: 'extension_ui_response'; id: string; cancelled: true }
 
 /**
- * 由 `patches/@earendil-works__pi-coding-agent@0.82.1.patch` 注入。
+ * 由 `patches/@earendil-works__pi-coding-agent@0.84.2.patch` 注入。
  * 原版 rpc 模式在 prompt 预检通过之后再抛出的异常没有任何出口 —— 响应早就发过了,
  * 事件流里也不会有 agent_end,宿主只能看到这一轮凭空消失(两个会话同时"停住"就是这么来的)。
  * 补丁把它变成一条事件,ChatPane 才能把真实错误摆出来。

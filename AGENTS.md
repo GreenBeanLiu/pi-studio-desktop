@@ -98,7 +98,7 @@ pnpm run verify
 
 ### 4. 打包白名单是显式的
 
-`package.json` 的 `build.files` 是白名单，`asar: false`。新增需要进产物的资源（`resources/pi-skills/**` 这类）**必须同步加进白名单**，否则开发环境好好的、装出来的包缺文件。
+`package.json` 的 `build.files` 是白名单，`asar: true`（由 `asar-packaging.regression.test.ts` 锁定）。新增需要进产物的资源（`resources/pi-skills/**` 这类）**必须同步加进白名单**，否则开发环境好好的、装出来的包缺文件。
 
 ## 核心资产 —— 改动需先说明理由并等确认
 
