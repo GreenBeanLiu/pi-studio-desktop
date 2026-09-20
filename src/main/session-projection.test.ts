@@ -446,4 +446,20 @@ describe('messagesRevision', () => {
 
     expect(tracker.clear().messagesRevision).toBe(before + 1)
   })
+
+  it('windows a very large session on the wire and pages the rest', () => {
+    const tracker = new SessionProjectionTracker()
+    const load = tracker.beginLoad('/repo', '/sessions/big.jsonl', 'session-big')
+
+    tracker.commit(load, Array.from({ length: 300 }, (_, i) => userMessage(`m${i}`, i)))
+    expect(tracker.wireSnapshot().messages).toHaveLength(300)
+    expect(tracker.wireSnapshot().messagesTruncated).toBeUndefined()
+
+    tracker.commit(load, Array.from({ length: 900 }, (_, i) => userMessage(`b${i}`, i)))
+    const wire = tracker.wireSnapshot()
+    expect(wire.messagesTruncated).toBe(true)
+    expect(wire.messages).toHaveLength(400)
+    expect(wire.olderMessagesOffset).toBe(500)
+    expect(tracker.messagesPage(0, wire.olderMessagesOffset!)).toHaveLength(500)
+  })
 })

@@ -199,6 +199,20 @@ export default function ChatPane({
   messagesStateRef.current = messages
   runRecordsRef.current = runRecords
 
+  // 更大的会话在快照里只带尾部(见 olderMessagesOffset/getMessagesPage):把更早的消息取回一次,
+  // 拼在前面,整段会话仍然可见(plan T2.4)。
+  const olderPrefixRef = useRef<AgentMessage[]>([])
+  const applyProjectionMessages = useCallback(async (list: AgentMessage[], offset: number) => {
+    if (offset > 0 && olderPrefixRef.current.length < offset) {
+      try {
+        olderPrefixRef.current = await api.pi.getMessagesPage(0, offset)
+      } catch {
+        // 拿不到更早的就只显示尾部窗口
+      }
+    }
+    setMessages([...olderPrefixRef.current, ...list])
+  }, [])
+
   const refreshModelSwitcherState = useCallback(async (): Promise<void> => {
     const [settingsResult, labelsResult] = await Promise.allSettled([
       api.settings.load(),
@@ -275,6 +289,7 @@ export default function ChatPane({
     setRetryNotice(null)
     streamingIndexRef.current = null
     appliedMessagesRevisionRef.current = null
+    olderPrefixRef.current = []
     if (!workspace || starting) {
       setMessages([])
       setToolExecutions({})
@@ -291,7 +306,7 @@ export default function ChatPane({
       .getSessionProjection()
       .then((projection) => {
         appliedMessagesRevisionRef.current = projection.messagesRevision
-        setMessages(projection.messages)
+        void applyProjectionMessages(projection.messages, projection.olderMessagesOffset ?? 0)
         setToolExecutions(toolsFromProjection(projection.tools))
         setApprovalRequests(projection.approvals.map(approvalFromProjection))
       })
@@ -301,7 +316,7 @@ export default function ChatPane({
     api.pi.getCommands().then(setCommands).catch(() => {})
     void refreshModelSwitcherState()
     void refreshBackendState()
-  }, [workspace?.path, refreshModelSwitcherState, refreshBackendState])
+  }, [workspace?.path, refreshModelSwitcherState, refreshBackendState, applyProjectionMessages])
 
   useEffect(() => {
     return api.pi.onAgentStatusSnapshot(setAgentStatus)
@@ -319,12 +334,12 @@ export default function ChatPane({
       if (plan.messages) {
         appliedMessagesRevisionRef.current = plan.messages.revision
         streamingIndexRef.current = null
-        setMessages(plan.messages.list)
+        void applyProjectionMessages(plan.messages.list, projection.olderMessagesOffset ?? 0)
       }
       setToolExecutions(plan.tools)
       setApprovalRequests(plan.approvals)
     })
-  }, [workspace?.path])
+  }, [workspace?.path, applyProjectionMessages])
 
   // 主进程拥有收藏模型补录策略；渲染层只触发幂等协调并刷新展示数据。
   const syncedCustomModelsRef = useRef(false)

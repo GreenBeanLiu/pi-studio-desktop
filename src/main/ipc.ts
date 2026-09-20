@@ -102,7 +102,7 @@ remoteControl.setProjectionProvider({
 })
 
 function broadcastSessionProjection(): void {
-  const snapshot = sessionProjection.snapshot()
+  const snapshot = sessionProjection.wireSnapshot()
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send('pi:sessionProjection', snapshot)
   }
@@ -905,11 +905,17 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('pi:getCapabilities', () => piClientManager.getRuntimeCapabilities())
   ipcMain.handle('pi:getSessionProjection', async () => {
     try {
-      return await refreshSessionProjection()
+      await refreshSessionProjection()
+      return sessionProjection.wireSnapshot()
     } catch (error) {
       appendAppLog('warn', 'session.projection', 'Failed to load session projection', normalizeError(error))
-      return sessionProjection.snapshot()
+      return sessionProjection.wireSnapshot()
     }
+  })
+  ipcMain.handle('pi:getMessagesPage', (_event, offset: unknown, limit: unknown) => {
+    const parsedOffset = parseNonNegativeSafeInteger(offset, 'offset')
+    const parsedLimit = parseNonNegativeSafeInteger(limit, 'limit')
+    return sessionProjection.messagesPage(parsedOffset, Math.min(parsedLimit, 1000))
   })
   ipcMain.handle('pi:getState', () => piClientManager.getState())
   ipcMain.handle('pi:getArtifactChunk', (_event, artifactId: unknown, offsetChars: unknown) => {

@@ -138,7 +138,7 @@ describe('handler 接线', () => {
     const branch = chatPane.slice(chatPane.indexOf('if (plan.messages) {'))
     const body = branch.slice(0, branch.indexOf('setToolExecutions'))
     expect(body).toContain('streamingIndexRef.current = null')
-    expect(body).toContain('setMessages(plan.messages.list)')
+    expect(body).toContain('applyProjectionMessages(plan.messages.list')
     expect(body).toContain('appliedMessagesRevisionRef.current = plan.messages.revision')
   })
 

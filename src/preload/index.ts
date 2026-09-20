@@ -56,6 +56,7 @@ const METHODS = {
     'getAgentStatusSnapshot',
     'getCapabilities',
     'getSessionProjection',
+    'getMessagesPage',
     'onEvent',
     'onStatus',
     'onSessionActivity',

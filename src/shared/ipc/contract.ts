@@ -177,6 +177,8 @@ export type DesktopApi = {
     onRuntime: (cb: (snapshot: AgentRuntimeSnapshot) => void) => () => void
     onAgentStatusSnapshot: (cb: (snapshot: AgentRunStatusSnapshot | null) => void) => () => void
     getSessionProjection: () => Promise<SessionProjectionSnapshot>
+    /** 更大的会话在快照里只发尾部;用 offset/limit 往前翻页取更早的消息(见 olderMessagesOffset)。 */
+    getMessagesPage: (offset: number, limit: number) => Promise<AgentMessage[]>
     onSessionProjection: (cb: (snapshot: SessionProjectionSnapshot) => void) => () => void
   }
   routines: {
@@ -935,6 +937,9 @@ export type SessionProjectionSnapshot = {
   sessionId: string | null
   source: 'durable-session'
   messages: AgentMessage[]
+  /** true = messages 只是尾部窗口;更早的用 olderMessagesOffset + getMessagesPage 取。 */
+  messagesTruncated?: boolean
+  olderMessagesOffset?: number
   tools: Record<string, ToolExecutionProjection>
   approvals: ApprovalProjection[]
   updatedAt: string | null

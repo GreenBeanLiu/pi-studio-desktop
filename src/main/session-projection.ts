@@ -32,6 +32,9 @@ const INITIAL_SNAPSHOT: SessionProjectionSnapshot = {
 
 type RuntimeEvent = { type: string; [key: string]: unknown }
 
+// 快照上线只带这么多条消息(计划 T2.4);更大的会话用 getMessagesPage 往前翻。
+const PROJECTION_WIRE_WINDOW = 400
+
 const EVENT_TYPES: Record<string, StudioAgentEvent['type']> = {
   agent_start: 'agent.started',
   agent_end: 'agent.ended',
@@ -136,6 +139,22 @@ export class SessionProjectionTracker {
 
   snapshot(): SessionProjectionSnapshot {
     return this.snap
+  }
+
+  /**
+   * What goes on the wire: for a very large session, only the tail of `messages`, with the
+   * offset so a client can page the rest. The full list stays in this process (plan T2.4).
+   */
+  wireSnapshot(): SessionProjectionSnapshot {
+    const messages = this.snap.messages
+    if (messages.length <= PROJECTION_WIRE_WINDOW) return this.snap
+    const offset = messages.length - PROJECTION_WIRE_WINDOW
+    return { ...this.snap, messages: messages.slice(offset), messagesTruncated: true, olderMessagesOffset: offset }
+  }
+
+  messagesPage(offset: number, limit: number): AgentMessage[] {
+    const start = Math.max(0, Math.trunc(offset))
+    return this.snap.messages.slice(start, start + Math.max(0, Math.trunc(limit)))
   }
 
   isCurrentLoad(load: SessionProjectionLoad): boolean {
