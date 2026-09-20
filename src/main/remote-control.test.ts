@@ -388,6 +388,21 @@ describe('remote-control command protocol', () => {
     mocks.getWorkspacePath.mockReturnValue(workspace)
     const ws = await connect()
     try {
+      // 没有 audit.approved_capabilities 的写操作要被桌面自己拒掉(计划 T4.2)
+      ws.receive({
+        id: 'normalized-scope-unapproved',
+        type: 'executeToolOperation',
+        operationId: 'normalized-scope-bad',
+        toolName: 'local.write',
+        protocolVersion: 2,
+        deadlineAt: '2099-01-01T00:00:00Z',
+        scope: { workspace: wireWorkspace, permissions: ['local.write'] },
+        arguments: { workspace: wireWorkspace, path: 'note.txt', content: 'hello' },
+      })
+      await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({
+        id: 'normalized-scope-unapproved', code: 'SCOPE_MISMATCH',
+      }))
+
       ws.receive({
         id: 'normalized-scope',
         type: 'executeToolOperation',
@@ -396,6 +411,7 @@ describe('remote-control command protocol', () => {
         protocolVersion: 2,
         deadlineAt: '2099-01-01T00:00:00Z',
         scope: { workspace: wireWorkspace, permissions: ['local.write'] },
+        audit: { approved_capabilities: ['workspace_write'] },
         arguments: { workspace: wireWorkspace, path: 'note.txt', content: 'hello' },
       })
       await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({
@@ -424,7 +440,18 @@ describe('remote-control command protocol', () => {
     }))
     expect(mocks.bash).not.toHaveBeenCalled()
 
-    ws.receive({ ...base, id: 'approved-shell-scope', scope: { ...base.scope, permission: 'git_push' } })
+    // 权限对上了,但没有被批准 —— 会改动的命令仍要拒
+    ws.receive({ ...base, id: 'unapproved-shell-scope', scope: { ...base.scope, permission: 'git_push' } })
+    await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({
+      id: 'unapproved-shell-scope', code: 'SCOPE_MISMATCH', error: 'shell command requires approved git_push',
+    }))
+    expect(mocks.bash).not.toHaveBeenCalled()
+
+    ws.receive({
+      ...base, id: 'approved-shell-scope',
+      scope: { ...base.scope, permission: 'git_push' },
+      audit: { approved_capabilities: ['git_push'] },
+    })
     await vi.waitFor(() => expect(mocks.bash).toHaveBeenCalledWith('git push origin main'))
   })
 

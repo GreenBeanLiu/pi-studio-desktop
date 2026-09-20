@@ -108,6 +108,14 @@ export async function executeLocalToolOperation(msg: Record<string, unknown>): P
     if (!Array.isArray(permissions) || !permissions.includes(toolName)) {
       return { error: 'tool scope permissions must include toolName', code: 'SCOPE_MISMATCH' }
     }
+    // 已批准的能力由控制面经 audit 带过来(routing.py 已发)。桌面自己也门控:远端驱动的写/执行
+    // 不能只凭 scope 匹配就落地(计划 T4.2)。
+    const audit = isRecord(msg.audit) ? msg.audit : {}
+    const approvedRaw = audit.approved_capabilities ?? audit.approvedCapabilities
+    const approvedList = Array.isArray(approvedRaw) ? approvedRaw.map((item) => String(item)) : []
+    if (toolName === 'local.write' && !approvedList.includes('workspace_write')) {
+      return { error: 'local.write requires approved workspace_write', code: 'SCOPE_MISMATCH' }
+    }
     if (toolName === 'shell.exec' || toolName === 'bash') {
       const permission = scope.permission
       if (!isLocalShellPermission(permission)) {
@@ -122,13 +130,14 @@ export async function executeLocalToolOperation(msg: Record<string, unknown>): P
       if (permission !== required) {
         return { error: `shell command requires ${required} permission`, code: 'SCOPE_MISMATCH' }
       }
+      // 只读查询(shell_read)不需批准;任何会改动的权限都必须在已批准列表里。
+      if (permission !== 'shell_read' && !approvedList.includes(String(permission))) {
+        return { error: `shell command requires approved ${permission}`, code: 'SCOPE_MISMATCH' }
+      }
     }
     if (toolName === 'verify.checks') {
       const checks = Array.isArray(args.checks) ? args.checks : []
       const needsWrite = checks.some((item) => isRecord(item) && item.type === 'command')
-      const audit = isRecord(msg.audit) ? msg.audit : {}
-      const approved = audit.approved_capabilities ?? audit.approvedCapabilities
-      const approvedList = Array.isArray(approved) ? approved.map((item) => String(item)) : []
       if (needsWrite && !approvedList.includes('workspace_write')) {
         return { error: 'command checks require approved workspace_write', code: 'SCOPE_MISMATCH' }
       }
