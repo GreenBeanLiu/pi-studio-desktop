@@ -67,13 +67,38 @@ export const LOCAL_TOOL_PROTOCOL = {
 export const TOOL_GATEWAY_MANIFEST = {
   manifestVersion: 1,
   operationProtocols: [1, 2],
+  // description/schema 是可选的加法(P4a):控制面可以据此派生工具表,老控制面忽略它们。
   tools: [
-    { name: 'shell.exec', scopeVersion: 2, requiresWorkspace: true },
-    { name: 'bash', scopeVersion: 2, requiresWorkspace: true },
-    { name: 'local.list', scopeVersion: 1, requiresWorkspace: true, maxEntries: LOCAL_LIST_MAX_ENTRIES },
-    { name: 'local.read', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES },
-    { name: 'local.write', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES },
-    { name: 'verify.checks', scopeVersion: 1, requiresWorkspace: true },
+    {
+      name: 'shell.exec', scopeVersion: 2, requiresWorkspace: true,
+      description: 'Run a shell command on the bound desktop workspace.',
+      schema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+    },
+    {
+      name: 'bash', scopeVersion: 2, requiresWorkspace: true,
+      description: 'Run a shell command on the bound desktop workspace.',
+      schema: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'integer' } }, required: ['command'] },
+    },
+    {
+      name: 'local.list', scopeVersion: 1, requiresWorkspace: true, maxEntries: LOCAL_LIST_MAX_ENTRIES,
+      description: 'List names and types in the bound desktop workspace or a relative subdirectory.',
+      schema: { type: 'object', properties: { path: { type: 'string' }, limit: { type: 'integer' } }, required: [] },
+    },
+    {
+      name: 'local.read', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES,
+      description: 'Read a small UTF-8 text file on the bound desktop workspace.',
+      schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
+    },
+    {
+      name: 'local.write', scopeVersion: 1, requiresWorkspace: true, maxBytes: LOCAL_FILE_MAX_BYTES,
+      description: 'Write a small UTF-8 text file on the bound desktop. Does not overwrite unless overwrite is true.',
+      schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, overwrite: { type: 'boolean' } }, required: ['path', 'content'] },
+    },
+    {
+      name: 'verify.checks', scopeVersion: 1, requiresWorkspace: true,
+      description: 'Run the task acceptance checks (file/command/diff) on the bound desktop workspace.',
+      schema: { type: 'object', properties: { checks: { type: 'array', items: { type: 'object' } } }, required: ['checks'] },
+    },
   ],
 } as const
 

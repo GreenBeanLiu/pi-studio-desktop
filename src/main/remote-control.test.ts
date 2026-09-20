@@ -55,7 +55,7 @@ vi.mock('./model-catalog', () => ({
 }))
 
 import { HOST_EVENT_CHANNELS, LOCAL_TOOL_PROTOCOL, SUPPORTED_COMMANDS, remoteControl } from './remote-control'
-import { executeLocalToolOperation } from './tool-gateway'
+import { executeLocalToolOperation, TOOL_GATEWAY_MANIFEST } from './tool-gateway'
 import { ToolReceiptLedger } from './tool-receipts'
 
 type Listener = (event: { data?: string; code?: number; reason?: string }) => void
@@ -711,14 +711,7 @@ describe('remote-control command protocol', () => {
           toolGateway: {
             manifestVersion: 1,
             operationProtocols: [1, 2],
-            tools: [
-              { name: 'shell.exec', scopeVersion: 2, requiresWorkspace: true },
-              { name: 'bash', scopeVersion: 2, requiresWorkspace: true },
-              { name: 'local.list', scopeVersion: 1, requiresWorkspace: true, maxEntries: 200 },
-              { name: 'local.read', scopeVersion: 1, requiresWorkspace: true, maxBytes: 65536 },
-              { name: 'local.write', scopeVersion: 1, requiresWorkspace: true, maxBytes: 65536 },
-              { name: 'verify.checks', scopeVersion: 1, requiresWorkspace: true },
-            ],
+            tools: [...TOOL_GATEWAY_MANIFEST.tools],
           },
         },
       }),
