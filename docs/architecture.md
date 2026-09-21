@@ -101,7 +101,36 @@ flowchart LR
 - main/headless 共用路径不能静态 import Electron。`RuntimeHost.startCompiled()` 要能在 eval CLI 里跑。
 - 日志写入和读取失败都不能阻断 agent 启动；诊断证据是副作用，不是业务前置条件。
 
-### 2.1 Control Plane Runtime Targets
+### 2.1 Desktop Session Kernel（逻辑模块）
+
+`RuntimeHost` 只负责把一份 `RunProfile` 变成可运行、可诊断、可清理的实例；它不是完整的
+会话内核。桌面侧真正的 Session Kernel 是以下模块共同形成的逻辑模块：
+
+```text
+pi-client                    对外 interface：工作区、活动会话和用户动作
+  ├─ pi-agent-pool           backend 资源所有权、job 血缘与回收
+  ├─ pi-event-projection     live runtime event 投影
+  ├─ session-projection      durable history + live event 的 UI 读取模型
+  └─ agent-runtime           workspace/runtime 状态快照
+             │
+             ▼
+       AgentBackend seam
+       ├─ Pi runtime adapter
+       └─ ACP adapter
+```
+
+这里的 `Session Kernel` 是架构职责名，不要求新建一个把现有模块再包一层的类。深化方向是：
+
+- 活动会话、进程所有权、待审批请求和 projection revision 各自只有一个权威 owner；
+- Pi 与 ACP 只在 adapter 创建阶段分叉，共同生命周期在 pool/kernel 内收敛；
+- renderer 只消费可重建快照，不通过事件顺序猜状态；
+- control-plane task 与 desktop session 可关联但不共用状态机；
+- Pi/ACP backend 继续拥有 agent loop、模型、tools/MCP 和 context policy，Electron 不复制 harness。
+
+完整评审、状态所有权表和分阶段路线见
+[Session Kernel 架构评审](session-kernel-architecture-2026-09-21.md)。
+
+### 2.2 Control Plane Runtime Targets
 
 `pi-studio-control-plane` 已经承担任务控制面的职责：任务入队、审批、lease、worker heartbeat、执行记录和巡检接口。它现在把可选执行目标显式声明成 runtime target contract，而不是让 mobile/backend 从字符串猜语义：
 

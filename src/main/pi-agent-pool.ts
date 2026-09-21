@@ -23,6 +23,7 @@ import {
   pickEvictableAgent,
   sessionKey,
   type AgentEntry,
+  type AgentBackend,
   type AgentStatusEvent,
   type LaunchContext,
   type SessionActivityEvent,
@@ -111,6 +112,53 @@ export class AgentPool {
     return this.launch?.sandboxSessionPaths ? sandboxSessionPathToHost(sessionFile) : sessionFile
   }
 
+  /**
+   * 把一个已经创建好的 backend 纳入 Session Kernel 的共同生命周期。
+   *
+   * Pi 和 ACP 的启动握手不同，但握手完成后都必须由同一处登记资源、挂事件、
+   * 维护 status 并负责回收。把这些步骤散在两个 spawn 分支里，很容易让新加的
+   * 生命周期能力只覆盖其中一个 backend。
+   */
+  private adoptBackend(options: {
+    client: AgentBackend
+    pi: PiAgentRunHandle | null
+    acp: AgentEntry['acp']
+    statusFile: string
+    sessionFile: string | null
+    sessionId: string | null
+  }): AgentEntry {
+    const job = this.jobs.register({
+      kind: 'chat',
+      owner: { sessionFile: options.sessionFile },
+      resources: {
+        dispose: () => options.client.dispose(),
+        forceDispose: () => options.client.forceDispose(),
+        pid: options.client.processId(),
+      },
+    })
+    const entry: AgentEntry = {
+      client: options.client,
+      pi: options.pi,
+      acp: options.acp,
+      firstMessage: null,
+      job,
+      sessionFile: options.sessionFile,
+      sessionId: options.sessionId,
+      unsubscribe: null,
+      pendingUi: [],
+      outstandingUi: new Map(),
+      subagentJobs: new Map(),
+      statusFile: options.statusFile,
+      status: new AgentStatusTracker(options.statusFile, this.launch?.cwd ?? ''),
+      loopGuard: new AgentLoopGuard(),
+    }
+    entry.status.write()
+    this.attachAgentProcessLoggers(entry)
+    entry.unsubscribe = options.client.onEvent((event) => this.host.handleRuntimeEvent(entry, event))
+    this.entries.push(entry)
+    return entry
+  }
+
   /** 起一个新的 agent 进程;restoreSessionFile 非空时让它接管那个已有会话。 */
   async spawn(restoreSessionFile: string | null): Promise<AgentEntry> {
     const launch = this.launch
@@ -136,38 +184,14 @@ export class AgentPool {
         requestedSessionFile: restoreSessionFile,
       },
     })
-    const job = this.jobs.register({
-      kind: 'chat',
-      owner: { sessionFile: restoreSessionFile },
-      resources: {
-        dispose: () => client.dispose(),
-        forceDispose: () => client.forceDispose(),
-        pid: client.processId(),
-      },
-    })
-
-    const entry: AgentEntry = {
+    const entry = this.adoptBackend({
       client,
       pi: client,
       acp: null,
-      firstMessage: null,
-      job,
+      statusFile,
       sessionFile: null,
       sessionId: null,
-      unsubscribe: null,
-      pendingUi: [],
-      outstandingUi: new Map(),
-      subagentJobs: new Map(),
-      statusFile,
-      status: new AgentStatusTracker(statusFile, launch.cwd),
-      loopGuard: new AgentLoopGuard(),
-    }
-    entry.status.write()
-    this.attachAgentProcessLoggers(entry)
-    entry.unsubscribe = client.onEvent((event) =>
-      this.host.handleRuntimeEvent(entry, event as PiRuntimeEvent),
-    )
-    this.entries.push(entry)
+    })
 
     // 全新的 agent 上没有正在跑的一轮,这时候 switch_session 是安全的
     if (restoreSessionFile) {
@@ -196,8 +220,8 @@ export class AgentPool {
     } catch (err) {
       appendAppLog('warn', 'agent.state', 'Failed to read initial agent state', normalizeError(err))
     }
-    job.claim({ sessionId: entry.sessionId, sessionFile: entry.sessionFile })
-    job.ready()
+    entry.job.claim({ sessionId: entry.sessionId, sessionFile: entry.sessionFile })
+    entry.job.ready()
 
     await this.evictIfNeeded()
     return entry
@@ -224,40 +248,17 @@ export class AgentPool {
       agentId,
       resumeSessionId,
     })
-    const job = this.jobs.register({
-      kind: 'chat',
-      owner: { sessionFile: null },
-      resources: {
-        dispose: () => connection.dispose(),
-        forceDispose: () => connection.forceDispose(),
-        pid: connection.processId(),
-      },
-    })
-
     const statusFile = join(agentConfigDir(), 'runtime-status', `${randomUUID()}.json`)
-    const entry: AgentEntry = {
+    const entry = this.adoptBackend({
       client: connection,
       pi: null,
       acp: { agentId, agentName },
-      firstMessage: null,
-      job,
-      // 外部 agent 自己存会话,宿主没有对应的 jsonl 可指。
+      statusFile,
       sessionFile: null,
       sessionId: connection.sessionId,
-      unsubscribe: null,
-      pendingUi: [],
-      outstandingUi: new Map(),
-      subagentJobs: new Map(),
-      statusFile,
-      status: new AgentStatusTracker(statusFile, launch.cwd),
-      loopGuard: new AgentLoopGuard(),
-    }
-    entry.status.write()
-    this.attachAgentProcessLoggers(entry)
-    entry.unsubscribe = connection.onEvent((event) => this.host.handleRuntimeEvent(entry, event))
-    this.entries.push(entry)
-    job.claim({ sessionId: entry.sessionId, sessionFile: null })
-    job.ready()
+    })
+    entry.job.claim({ sessionId: entry.sessionId, sessionFile: null })
+    entry.job.ready()
 
     await this.evictIfNeeded()
     return entry
