@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentStatusTracker } from './agent-status'
+import { AgentStatusTracker, pruneStaleRuntimeStatus } from './agent-status'
 
 describe('agent status tracker', () => {
   it('projects runtime events into a status file', () => {
@@ -123,5 +123,35 @@ describe('agent status tracker', () => {
     tracker.observe({ type: 'tool_execution_end', toolName: 'bash', isError: true, result: { error: 'failed' } })
     expect(tracker.snapshot()).toMatchObject({ failures: 3, repeatedFailures: 1 })
     tracker.dispose()
+  })
+})
+
+describe('pruneStaleRuntimeStatus', () => {
+  it('removes crash-leftover status files and reports the count', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-studio-status-prune-'))
+    writeFileSync(join(dir, 'a.json'), '{}', 'utf8')
+    writeFileSync(join(dir, 'b.json'), '{}', 'utf8')
+
+    expect(pruneStaleRuntimeStatus(dir)).toBe(2)
+    expect(readdirSync(dir)).toEqual([])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('is a no-op when the directory does not exist yet', () => {
+    const dir = join(mkdtempSync(join(tmpdir(), 'pi-studio-status-none-')), 'missing')
+    expect(existsSync(dir)).toBe(false)
+    expect(pruneStaleRuntimeStatus(dir)).toBe(0)
+  })
+
+  it('a live tracker removes its own file on dispose, so a clean stop leaves nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pi-studio-status-clean-'))
+    mkdirSync(dir, { recursive: true })
+    const file = join(dir, 'status.json')
+    const tracker = new AgentStatusTracker(file, 'D:/workspace')
+    tracker.observe({ type: 'agent_start' })
+    expect(existsSync(file)).toBe(true)
+    tracker.dispose()
+    expect(existsSync(file)).toBe(false)
+    rmSync(dir, { recursive: true, force: true })
   })
 })

@@ -21,12 +21,31 @@ Pi session files, the selected workspace, Docker, and remote integrations.
 | `userData/pi-agent/shared-memory.snapshot.json` | Read-only mirror for sandboxed agents that cannot reach 127.0.0.1 | Regenerable | No |
 | `userData/pi-agent/shared-memory.connection.json` | Local memory service port and bearer token | Regenerable; removed on quit | No |
 | `userData/logs/**` | Application diagnostics | Yes, with retention limit | No |
+| `userData/pi-agent/runtime-status/**` | Per-process agent status snapshots written by the active tracker; removed on dispose, stale leftovers pruned on startup | Regenerable | No |
 | `userData/backups/YYYY-MM-DD/**` | Daily startup snapshots of critical configuration and SQLite state, with SHA-256 manifest; newest seven retained | Yes | No |
 | `userData/backups/pre-restore-*/**` | Protection points created immediately before a requested restore; newest three retained | Yes | No |
 | `userData/backups/.restore-pending.json` | Validated one-shot restore plan consumed before local stores open | Temporary | No |
 | `userData/sandbox/**` | Generated Dockerfile and RPC shim | Regenerable | No |
 | `<workspace>/.pi-studio/memory.md` | Workspace memory maintained with the project | Yes | No |
 | `<workspace>/.pi-studio/articles/**` | Exported Markdown/HTML article artifacts | Yes | Metadata only |
+
+## Crash recovery semantics（2026-09-27）
+
+After a crash or forced kill, state is classified rather than assumed healthy:
+
+- **Recovered**: SQLite workflow/run state, settings, channels, Pi session JSONL, shared memory, and the
+  tool receipt ledger's settled entries are all read back as the truth.
+- **Marked interrupted (never assumed successful)**: open routine runs via `interruptOpenRoutineRuns`;
+  a dangling `dispatched` tool receipt is settled as `INTERRUPTED` on load (`effect unknown`), so a
+  retried operation replays the unknown-effect failure instead of running again; an agent job whose
+  cleanup could not be confirmed stays `orphaned` with evidence.
+- **Regenerated or cleaned**: `runtime-status/**` per-process files are pruned at startup
+  (`pruneStaleRuntimeStatus`); `run-change` temp dirs are cleaned at startup
+  (`cleanupStaleRunChangeTempDirs`); `shared-memory.connection.json` is removed on quit and rewritten by
+  the service.
+- **Fail closed**: approvals are not persisted — a crash leaves no reusable pending approval, and
+  unattended runs deny every blocking request (`UnattendedApprovalGate`). The renderer consumes
+  projections and never fabricates a success from stale state.
 
 ## Remote and external state
 

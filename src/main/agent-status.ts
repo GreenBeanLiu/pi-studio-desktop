@@ -1,6 +1,6 @@
 import type { AgentStatusTodo } from '../shared/ipc/contract'
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'fs'
-import { dirname } from 'path'
+import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 
 type RuntimeEvent = {
   type: string
@@ -233,6 +233,30 @@ export class AgentStatusTracker {
     this.timer = null
     try { rmSync(this.file, { force: true }) } catch { /* best effort cleanup */ }
   }
+}
+
+/**
+ * 启动时清掉上次崩溃/强杀遗留的 per-process 状态文件(`runtime-status/<uuid>.json`)。
+ * 正常收尾由 `AgentStatusTracker.dispose()` 删;崩溃留下的孤儿没人再读,启动时也没有活动
+ * agent 进程,所以整目录安全清空。返回删掉的文件数。
+ */
+export function pruneStaleRuntimeStatus(dir: string): number {
+  let removed = 0
+  let entries: string[]
+  try {
+    entries = readdirSync(dir)
+  } catch {
+    return 0
+  }
+  for (const entry of entries) {
+    try {
+      rmSync(join(dir, entry), { force: true })
+      removed += 1
+    } catch {
+      /* best effort */
+    }
+  }
+  return removed
 }
 
 export function formatAgentStatus(snapshot: AgentStatusSnapshot): string {

@@ -11,6 +11,7 @@ import { piClientManager } from './pi-client'
 import { remoteControl } from './remote-control'
 import { ToolReceiptLedger } from './tool-receipts'
 import { loadSettings } from './settings'
+import { pruneStaleRuntimeStatus } from './agent-status'
 import { appendAppLog, attachWindowLoggers, installProcessLoggers, normalizeError } from './app-log'
 import { isMissingUpdateChannel } from './update-error'
 import {
@@ -265,10 +266,19 @@ app.whenReady().then(() => {
     appendAppLog('warn', 'backup', 'Startup data backup failed', normalizeError(error))
   }
   const cleanedSnapshots = cleanupStaleRunChangeTempDirs()
+  // 上次崩溃留下的 per-process 状态文件(runtime-status/*):启动时没有活动 agent,整目录清掉
+  const prunedStatusFiles = pruneStaleRuntimeStatus(
+    join(app.getPath('userData'), 'pi-agent', 'runtime-status'),
+  )
   appendAppLog('info', 'app', 'App ready', { version: app.getVersion() })
   if (cleanedSnapshots > 0) {
     appendAppLog('info', 'git.runChanges', 'Cleaned stale Git snapshot directories', {
       count: cleanedSnapshots,
+    })
+  }
+  if (prunedStatusFiles > 0) {
+    appendAppLog('info', 'agent.status', 'Cleaned stale agent status files', {
+      count: prunedStatusFiles,
     })
   }
 

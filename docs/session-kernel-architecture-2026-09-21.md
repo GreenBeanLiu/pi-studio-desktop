@@ -161,6 +161,10 @@ Renderer 中的 React state 也不能成为恢复依据。
    先用契约测试阻止漂移，再考虑抽共享 package。
 5. **补 recovery checkpoint。** 明确应用崩溃后哪些对象能恢复、哪些只能标记 interrupted；
    approval 必须 fail closed，后台进程不能凭旧 projection 假装仍受控。
+   **已补（2026-09-27）**：恢复语义写进 `docs/persistence-inventory.md`（恢复 / 标记 interrupted /
+   重新生成 / fail closed 四类）；启动时清理崩溃遗留的 per-process 状态文件
+   （`pruneStaleRuntimeStatus`，`agent-status.test.ts` 覆盖）。approval 不持久化——崩溃后没有可复用的
+   pending approval，无人值守一律 deny。
 
 ### Next：有真实需求再扩展
 
