@@ -5,6 +5,7 @@ import { join, dirname, posix, win32 } from 'path'
 import { resolvePiCliPath } from './pi-process'
 import { agentConfigDir } from './settings'
 import { detectSeatbelt, prepareSeatbeltSandboxLaunch } from './sandbox-seatbelt'
+import { selectSandboxBackend, type SandboxBackend, type SandboxLaunch } from './sandbox-backend'
 import type { SandboxDetect, SandboxMode } from '../shared/ipc/contract'
 import { appendAppLog, normalizeError } from './app-log'
 import {
@@ -260,71 +261,86 @@ export function buildSandboxDockerArgs(opts: {
   ]
 }
 
+// ── 后端选择(见 sandbox-backend.ts) ─────────────────────────────
+
+/** macOS:系统自带 Seatbelt,无 daemon / 无镜像 / 进程级。mac 上不走 Docker —— 那条
+ * 2026-07-15 已封存(容器出网不通),且 Docker Desktop 对桌面应用太重。 */
+const seatbeltBackend: SandboxBackend = {
+  id: 'seatbelt',
+  available: () => detectSeatbelt(),
+  prepare: async (cwd, env) => ({
+    ...(await prepareSeatbeltSandboxLaunch(cwd, env, resolvePiCliPath())),
+    mode: 'seatbelt',
+  }),
+}
+
+/** 首选 WSL2 + bubblewrap(docs/sandbox-mode-plan.md「2026-07-15 复盘与决策」):
+ * 文件隔离靠 mount namespace,出站经主机侧白名单代理——根治 Docker 容器出网不通。 */
+const wslBackend: SandboxBackend = {
+  id: 'wsl',
+  available: () => detectWslSandboxDistro(),
+  prepare: async (cwd, env) => ({ ...(await prepareWslSandboxLaunch(cwd, env)), mode: 'wsl' }),
+}
+
+/** 历史回退:daemon 在跑才算候选;镜像缺失属于 prepare 阶段的修复指引错误。 */
+const dockerBackend: SandboxBackend = {
+  id: 'docker',
+  available: async () => (await detectDocker()).daemonRunning,
+  prepare: async (cwd, env) => {
+    const tag = sandboxImageTag()
+    if (!(await imageExists(tag))) {
+      throw new Error(`沙箱镜像不存在(${tag}) —— 请在 设置 → 安全策略 里点「构建镜像」`)
+    }
+    const dockerArgs = buildSandboxDockerArgs({
+      image: tag,
+      hostWorkspace: cwd,
+      hostAgentDir: agentConfigDir(),
+      envNames: [
+        ...Object.keys({ ...env, PI_STUDIO_MEMORY_FILE: '/agent/shared-memory.snapshot.json' }),
+        // Preserve proxy settings used by the host for OpenAI-compatible gateways.
+        // Only names with a value are forwarded; secrets still travel by name
+        // from the explicit env object above and never appear in this argv.
+        ...[
+          'HTTP_PROXY',
+          'HTTPS_PROXY',
+          'ALL_PROXY',
+          'NO_PROXY',
+          'http_proxy',
+          'https_proxy',
+          'all_proxy',
+          'no_proxy',
+        ].filter((name) => !!process.env[name]),
+      ],
+    })
+    appendAppLog('info', 'sandbox.launch', 'Launching pi inside Docker sandbox', { cwd, tag })
+    return {
+      cliPath: ensureShim(),
+      env: {
+        ...env,
+        PI_STUDIO_MEMORY_FILE: '/agent/shared-memory.snapshot.json',
+        PISTUDIO_DOCKER_ARGS: JSON.stringify(dockerArgs),
+      },
+      mode: 'docker',
+    }
+  },
+}
+
+/** 数组顺序即优先级:Seatbelt → WSL → Docker。 */
+const SANDBOX_BACKENDS: SandboxBackend[] = [seatbeltBackend, wslBackend, dockerBackend]
+
+const SANDBOX_UNAVAILABLE =
+  '沙箱模式已开启,但未找到 pi-studio-sandbox WSL 发行版,Docker 也未运行 —— ' +
+  '推荐按 docs/sandbox-mode-plan.md 准备 WSL 沙箱发行版(约 1 分钟)'
+
 /**
- * 沙箱模式下给 RpcClient 用的 cliPath + env。daemon 没起或镜像缺失时抛错,
+ * 沙箱模式下给 RpcClient 用的 cliPath + env。按平台可用性选后端,缺环境时抛错,
  * 让 workspace:open 把错误透出去(而不是卡住)。
  */
-export async function prepareSandboxLaunch(
+export function prepareSandboxLaunch(
   cwd: string,
   env: Record<string, string>,
-): Promise<{ cliPath: string; env: Record<string, string>; mode: SandboxMode }> {
-  // macOS:系统自带的 Seatbelt,无 daemon / 无镜像 / 进程级。mac 上不走 Docker ——
-  // 那条 2026-07-15 已封存(容器出网不通),且 Docker Desktop 对桌面应用太重。
-  if (detectSeatbelt()) {
-    return {
-      ...(await prepareSeatbeltSandboxLaunch(cwd, env, resolvePiCliPath())),
-      mode: 'seatbelt',
-    }
-  }
-
-  // 首选 WSL2 + bubblewrap(docs/sandbox-mode-plan.md「2026-07-15 复盘与决策」):
-  // 文件隔离靠 mount namespace,出站经主机侧白名单代理——根治 Docker 容器出网不通。
-  if (await detectWslSandboxDistro()) {
-    return { ...(await prepareWslSandboxLaunch(cwd, env)), mode: 'wsl' }
-  }
-
-  const docker = await detectDocker()
-  if (!docker.daemonRunning) {
-    throw new Error(
-      '沙箱模式已开启,但未找到 pi-studio-sandbox WSL 发行版,Docker 也未运行 —— ' +
-        '推荐按 docs/sandbox-mode-plan.md 准备 WSL 沙箱发行版(约 1 分钟)',
-    )
-  }
-  const tag = sandboxImageTag()
-  if (!(await imageExists(tag))) {
-    throw new Error(`沙箱镜像不存在(${tag}) —— 请在 设置 → 安全策略 里点「构建镜像」`)
-  }
-  const dockerArgs = buildSandboxDockerArgs({
-    image: tag,
-    hostWorkspace: cwd,
-    hostAgentDir: agentConfigDir(),
-    envNames: [
-      ...Object.keys({ ...env, PI_STUDIO_MEMORY_FILE: '/agent/shared-memory.snapshot.json' }),
-      // Preserve proxy settings used by the host for OpenAI-compatible gateways.
-      // Only names with a value are forwarded; secrets still travel by name
-      // from the explicit env object above and never appear in this argv.
-      ...[
-        'HTTP_PROXY',
-        'HTTPS_PROXY',
-        'ALL_PROXY',
-        'NO_PROXY',
-        'http_proxy',
-        'https_proxy',
-        'all_proxy',
-        'no_proxy',
-      ].filter((name) => !!process.env[name]),
-    ],
-  })
-  appendAppLog('info', 'sandbox.launch', 'Launching pi inside Docker sandbox', { cwd, tag })
-  return {
-    cliPath: ensureShim(),
-    env: {
-      ...env,
-      PI_STUDIO_MEMORY_FILE: '/agent/shared-memory.snapshot.json',
-      PISTUDIO_DOCKER_ARGS: JSON.stringify(dockerArgs),
-    },
-    mode: 'docker',
-  }
+): Promise<SandboxLaunch> {
+  return selectSandboxBackend(SANDBOX_BACKENDS, cwd, env, SANDBOX_UNAVAILABLE)
 }
 
 // ── 注册 ─────────────────────────────────────────────────────────

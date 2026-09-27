@@ -308,7 +308,7 @@ renderer，用于排查多上游 failover、401/5xx 和长流式请求断连问�
 - `main/pi-client.ts` — 前台聊天会话管理、事件投影、后台会话池协调
 - `main/runtime-event-recorder.ts` / `main/runtime-event-log.ts` — host 级运行事件 JSONL 写入与 diagnostics 摘要投影
 - `main/remote-control.ts` — host 侧 WS：收指令分发到 RpcClient、转发 agent 事件；`executeToolOperation` 是 control plane 下发本地 tool 的 gateway 入口
-- `main/sandbox.ts` / `sandbox-wsl.ts` — 可选把 agent 关进 WSL bubblewrap 或 Docker
+- `main/sandbox.ts` / `sandbox-backend.ts` / `sandbox-wsl.ts` / `sandbox-seatbelt.ts` — 可选把 agent 关进 WSL bubblewrap / macOS Seatbelt / Docker；`sandbox-backend.ts` 定义后端选择 seam（数组顺序即优先级）
 - `main/llm-gateway.ts` — 云端 LLM 网关对接
 - `main/routines.ts` / `routine-scheduler.ts` — 定时例程
 - `main/local-data-backup.ts` — 数据库打开前创建每日原子快照；恢复请求在重启后先校验、留保护点，再可回滚替换数据
