@@ -130,6 +130,12 @@ pi-client                    对外 interface：工作区、活动会话和用�
 完整评审、状态所有权表和分阶段路线见
 [Session Kernel 架构评审](session-kernel-architecture-2026-09-21.md)。
 
+Control Plane 正在增加 Session Mailbox / Reactor，负责 `control`、`resume`、`normal`
+三类会话内事件的持久调度。它与这里的 Desktop Session Kernel 不是同一个对象：前者拥有云端
+队列、lease、重试和 fencing，后者拥有本机 workspace、backend、projection 与资源回收。
+跨仓库入口、数据流和 Desktop 分阶段接入计划见
+[Desktop × Session Mailbox / Reactor 集成架构](session-mailbox-reactor-integration-2026-09-27.md)。
+
 ### 2.2 Control Plane Runtime Targets
 
 `pi-studio-control-plane` 已经承担任务控制面的职责：任务入队、审批、lease、worker heartbeat、执行记录和巡检接口。它现在把可选执行目标显式声明成 runtime target contract，而不是让 mobile/backend 从字符串猜语义：

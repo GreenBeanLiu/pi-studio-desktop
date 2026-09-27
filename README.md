@@ -25,6 +25,8 @@ pnpm run verify      # check + Electron 构建
 主要设计和运行时说明见：
 
 - [整体架构](docs/architecture.md)
+- [Desktop × Session Mailbox / Reactor 集成架构](docs/session-mailbox-reactor-integration-2026-09-27.md)
+- [Session Kernel 架构评审](docs/session-kernel-architecture-2026-09-21.md)
 - [运行时依赖](docs/runtime-dependencies.md)
 - [本地发布流程](docs/release-local.md)
 - [Skill 写作规范](docs/skill-authoring.md)

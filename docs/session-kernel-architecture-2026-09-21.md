@@ -121,6 +121,11 @@ host / WSL+bwrap / seatbelt / Docker
 | UI runtime 快照 | `agent-runtime.ts` | 只作为 kernel projection，不作为第二份业务权威状态 |
 | 云端调度与 lease | `pi-studio-control-plane` | 不下沉到桌面 Session Kernel |
 
+Control Plane 后续新增的 Session Mailbox / Reactor 同样不下沉到 Desktop：它负责云端 session
+内部 `control`、`resume`、`normal` 的 durable ordering；Desktop Session Kernel 仍负责本机
+workspace、backend、projection 和 resource cleanup。二者的入口、回传路径与开发顺序见
+[Desktop × Session Mailbox / Reactor 集成架构](session-mailbox-reactor-integration-2026-09-27.md)。
+
 ## 5. 权威状态规则
 
 同一个事实只能有一个 owner，其余都必须是可重建 projection：
