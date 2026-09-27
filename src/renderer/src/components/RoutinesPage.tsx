@@ -61,6 +61,7 @@ import {
   type RoutineStepProgress,
   type RoutineSchedule,
   type RoutineReviewRequest,
+  type IsolatedRoutineRun,
   type Workspace,
 } from '../lib/api'
 import { createRoutineStepFromPreset, routineNodePresetOptions } from '../lib/routine-node-presets'
@@ -535,6 +536,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
   const [stepProgress, setStepProgress] = useState<Record<string, Record<string, RoutineStepProgress['status']>>>({})
   const [reviewRequests, setReviewRequests] = useState<RoutineReviewRequest[]>([])
   const [reviewComment, setReviewComment] = useState('')
+  const [isolatedRuns, setIsolatedRuns] = useState<IsolatedRoutineRun[]>([])
   const reviewRequest = reviewRequests[0] ?? null
 
   async function refresh() {
@@ -553,6 +555,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
         return acc
       }, {}),
     )
+    setIsolatedRuns(await api.routines.isolatedRuns().catch(() => []))
     const activeId = [...state.runningIds, ...state.queuedIds][0]
     if (activeId) {
       setSelectedId((current) =>
@@ -582,6 +585,8 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
         delete next[run.routineId]
         return next
       })
+      // 隔离运行跑完可能留下待处理的变更副本
+      void api.routines.isolatedRuns().then(setIsolatedRuns).catch(() => {})
     })
     const offStep = api.routines.onStepProgress((p) => {
       setRoutineState((prev) => ({
@@ -644,6 +649,27 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
     }))
     setReviewComment('')
     message.info(decision === 'approve' ? '审核通过，工作流继续执行' : '审核已拒绝，工作流将停止')
+  }
+
+  async function applyIsolatedRunChanges(runId: string) {
+    const result = await api.routines.applyIsolated(runId)
+    if (result.errors.length > 0) {
+      message.error(`应用出错:${result.errors[0].message}`)
+    } else if (result.skipped.length > 0) {
+      message.warning(`已应用 ${result.applied.length} 个;${result.skipped.length} 个因冲突跳过`)
+    } else {
+      message.success(`已应用 ${result.applied.length} 个文件变更`)
+    }
+    setIsolatedRuns(await api.routines.isolatedRuns().catch(() => []))
+  }
+
+  async function discardIsolatedRunChanges(runId: string) {
+    const result = await api.routines.discardIsolated(runId)
+    if ('error' in result) {
+      message.error(result.error)
+      return
+    }
+    setIsolatedRuns(await api.routines.isolatedRuns().catch(() => []))
   }
 
   function buildSchedule(f: FormState): RoutineSchedule {
@@ -993,6 +1019,47 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
               <Button size="small" icon={<ChevronDown size={13} />}>模板</Button>
             </Dropdown>
           </div>
+
+          {isolatedRuns.length > 0 && (
+            <div className={styles.card}>
+              <span className={styles.label}>隔离变更待处理({isolatedRuns.length})</span>
+              {isolatedRuns.map((run) => (
+                <div key={run.runId} style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 500 }}>{run.routineName}</span>
+                    <span className={styles.hint}>
+                      {run.changes.length}
+                      {run.truncated ? '+' : ''} 个文件
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <Button size="small" type="primary" onClick={() => void applyIsolatedRunChanges(run.runId)}>
+                      应用
+                    </Button>
+                    <Popconfirm
+                      title="丢弃这次隔离变更?"
+                      okText="丢弃"
+                      cancelText="取消"
+                      onConfirm={() => void discardIsolatedRunChanges(run.runId)}
+                    >
+                      <Button size="small" danger>
+                        丢弃
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                  <pre className={styles.hint} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                    {run.changes
+                      .slice(0, 8)
+                      .map(
+                        (change) =>
+                          `${change.kind === 'added' ? '+' : change.kind === 'deleted' ? '-' : 'M'} ${change.path}`,
+                      )
+                      .join('\n')}
+                    {run.changes.length > 8 ? `\n… 另 ${run.changes.length - 8} 个` : ''}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
 
           {form && (
             <Drawer

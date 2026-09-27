@@ -207,6 +207,10 @@ export type DesktopApi = {
     ) => Promise<{ ok: true } | { error: string }>
     onReviewRequested: (cb: (request: RoutineReviewRequest) => void) => () => void
     onReviewCancelled: (cb: (payload: { reviewId: string; routineId: string; reason: string }) => void) => () => void
+    /** 隔离运行(workspaceMode='isolated')保留的待处理副本 */
+    isolatedRuns: () => Promise<IsolatedRoutineRun[]>
+    applyIsolated: (runId: string) => Promise<IsolatedApplyResult>
+    discardIsolated: (runId: string) => Promise<{ ok: true } | { error: string }>
   }
   channels: {
     list: () => Promise<Channel[]>
@@ -533,6 +537,32 @@ export type RoutineStepProgress = {
   stepIndex: number
   totalSteps: number
   status: 'running' | 'ok' | 'error' | 'timeout' | 'cancelled'
+}
+
+/** 隔离副本相对源工作区的单个文件改动。 */
+export type RoutineWorkspaceChange = {
+  path: string
+  kind: 'added' | 'modified' | 'deleted'
+}
+
+/** 一次隔离运行保留下来的待处理副本（供审阅 / 应用）。 */
+export type IsolatedRoutineRun = {
+  runId: string
+  routineId: string
+  routineName: string
+  sourcePath: string
+  createdAt: number
+  changes: RoutineWorkspaceChange[]
+  truncated: boolean
+}
+
+/** 应用隔离变更的结果：冲突 / 出错的文件跳过并报告，绝不覆盖。 */
+export type IsolatedApplyResult = {
+  applied: string[]
+  skipped: { path: string; reason: string }[]
+  errors: { path: string; message: string }[]
+  /** 全部干净应用后副本已删除 */
+  removed: boolean
 }
 
 export type ImageGenHistoryItem = {

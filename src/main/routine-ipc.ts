@@ -5,7 +5,13 @@ import { remoteControl } from './remote-control'
 import { parseRoutineSave } from '../shared/ipc/validators'
 import { isRoutineStepComplete } from './routine-step-validation'
 import { queueRoutineCloudSync, routineSyncOrigin } from './routine-cloud-sync'
-import { clearAllIsolatedWorkspaces } from './routine-isolation'
+import {
+  applyIsolatedRun,
+  discardIsolatedRun,
+  listIsolatedRuns,
+  pruneIsolatedRuns,
+} from './routine-isolation'
+import type { IsolatedApplyResult } from '../shared/ipc/contract'
 import { RoutineScheduler, dueSlotKey } from './routine-scheduler'
 import {
   MAX_RUNS_KEPT,
@@ -37,8 +43,8 @@ const stepIsComplete = isRoutineStepComplete
 
 export function registerRoutines(): void {
   initRoutineStorage()
-  // 上次崩溃可能留下隔离副本目录 —— run 之间不复用,启动直接清掉
-  void clearAllIsolatedWorkspaces().catch(() => {})
+  // 上次崩溃可能留下隔离副本目录;按保留期清理过旧的(7 天内留给用户应用)
+  void pruneIsolatedRuns().catch(() => {})
   const store = loadStore()
   const db = getRoutineDatabase()
   const interrupted = db?.interruptOpenRoutineRuns() ?? []
@@ -212,6 +218,38 @@ export function registerRoutines(): void {
     (_e, reviewId: string, decision: 'approve' | 'reject', comment?: string) =>
       respondToReview(reviewId, decision, comment),
   )
+
+  // 隔离运行保留的待处理副本:列出 / 全量应用(冲突跳过) / 丢弃
+  ipcMain.handle('routines:isolatedRuns', () => listIsolatedRuns())
+
+  ipcMain.handle('routines:applyIsolated', async (_e, runId: unknown): Promise<IsolatedApplyResult> => {
+    const id = String(runId ?? '').trim()
+    if (!id) {
+      return { applied: [], skipped: [], errors: [{ path: '', message: 'runId is required' }], removed: false }
+    }
+    try {
+      return await applyIsolatedRun(id)
+    } catch (error) {
+      appendAppLog('warn', 'routines.isolation', 'Failed to apply the isolated run', normalizeError(error))
+      return {
+        applied: [],
+        skipped: [],
+        errors: [{ path: '', message: error instanceof Error ? error.message : String(error) }],
+        removed: false,
+      }
+    }
+  })
+
+  ipcMain.handle('routines:discardIsolated', async (_e, runId: unknown) => {
+    const id = String(runId ?? '').trim()
+    if (!id) return { error: 'runId is required' }
+    try {
+      await discardIsolatedRun(id)
+      return { ok: true as const }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 
   // review 节点是阻塞式的,超时就把整条工作流拖死 —— 人在不在电脑前不该决定它的生死
   remoteControl.setReviewHost({

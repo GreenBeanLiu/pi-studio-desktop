@@ -287,11 +287,13 @@ Routine 的 agent 节点默认以 `routine.workspacePath` 为 cwd、工具集含
   报 `workspace-read-only`（无沙箱时仍是 `danger-full-access`，只有工具集被收窄，reason 里说明）。
 - **isolated**：run 开始时把工作区按**当前工作树**（含未提交改动）拷进
   `userData/routine-runs/<runId>/workspace`（过滤 `.git` / `node_modules` / `dist` / … 重目录），
-  agent 只在这个一次性副本里跑；跑完比对副本与原工作区，把变更文件清单（新增/修改/删除）写进 run
-  summary 与 terminal journal（`changedFiles`），**不自动应用**。副本在 `finally` 清理，启动时清掉
-  崩溃遗留（见 `src/main/routine-isolation.ts`）。不用 `git worktree`：worktree 只含 HEAD、不含
-  未提交改动。
+  同时记下初始状态的 `manifest.json`（path→sha1）。agent 只在这个一次性副本里跑；跑完变更 =
+  **副本 vs manifest**（不是 vs 当前源），所以运行期间用户的并发编辑不会被算成 agent 改动。有变更
+  就**保留副本**，在例程页的「隔离变更待处理」面板里可**一键应用**（全量、逐文件校验冲突：源文件自
+  run 开始被外部改过的跳过并报告，绝不覆盖）或**丢弃**；无变更自动清理。变更清单也写进 run summary
+  与 terminal journal（`changedFiles`）。启动按 7 天保留期清理旧副本（见
+  `src/main/routine-isolation.ts`）。不用 `git worktree`：worktree 只含 HEAD、不含未提交改动。
 - 两种模式都只作用于 **agent 节点**：确定性节点（`export` / `imagegen` / `folder-input` / …）仍走
   真实工作区。
 
-设置页的工作流编辑器有对应三态开关。「把变更应用回真实工作区」仍是后续。
+设置页的工作流编辑器有对应三态开关；隔离副本的变更在例程页应用 / 丢弃。

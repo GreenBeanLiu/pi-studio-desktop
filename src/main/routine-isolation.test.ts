@@ -3,10 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
+  applyIsolatedRunDir,
+  diffAgainstManifest,
   diffWorkspaceTrees,
   materializeIsolatedWorkspace,
+  persistIsolatedRun,
   removeIsolatedWorkspace,
+  snapshotTree,
 } from './routine-isolation'
+import type { IsolatedRoutineRun } from '../shared/ipc/contract'
 
 const roots: string[] = []
 afterAll(() => {
@@ -110,5 +115,95 @@ describe('routine isolation', () => {
     writeFileSync(join(copy, 'x.txt'), 'x', 'utf8')
     await removeIsolatedWorkspace(copy)
     expect(existsSync(copy)).toBe(false)
+  })
+
+  it('diffs against the run-start manifest, not the live source', async () => {
+    const root = scratch()
+    const src = join(root, 'ws')
+    mkdirSync(src, { recursive: true })
+    writeFileSync(join(src, 'a.txt'), 'a', 'utf8')
+    const copy = join(root, 'copy')
+    await materializeIsolatedWorkspace(src, copy)
+    const manifest = await snapshotTree(copy)
+
+    // 用户并发改了源;agent 改了副本 —— 只有副本那一侧算 agent 改动
+    writeFileSync(join(src, 'a.txt'), 'USER', 'utf8')
+    writeFileSync(join(copy, 'a.txt'), 'AGENT', 'utf8')
+
+    expect((await diffAgainstManifest(copy, manifest)).changes).toEqual([
+      { path: 'a.txt', kind: 'modified' },
+    ])
+  })
+
+  it('applies added/modified/deleted changes back to the source and removes the run', async () => {
+    const root = scratch()
+    const src = join(root, 'ws')
+    mkdirSync(src, { recursive: true })
+    writeFileSync(join(src, 'keep.txt'), 'keep', 'utf8')
+    writeFileSync(join(src, 'edit.txt'), 'before', 'utf8')
+    writeFileSync(join(src, 'gone.txt'), 'bye', 'utf8')
+
+    const runDir = join(root, 'run')
+    const workspace = join(runDir, 'workspace')
+    await materializeIsolatedWorkspace(src, workspace)
+    const manifest = await snapshotTree(workspace)
+    writeFileSync(join(workspace, 'edit.txt'), 'after', 'utf8')
+    writeFileSync(join(workspace, 'new.txt'), 'new', 'utf8')
+    rmSync(join(workspace, 'gone.txt'))
+    const { changes, truncated } = await diffAgainstManifest(workspace, manifest)
+    const meta: IsolatedRoutineRun = {
+      runId: 'run-1',
+      routineId: 'routine-1',
+      routineName: 'test',
+      sourcePath: src,
+      createdAt: Date.now(),
+      changes,
+      truncated,
+    }
+    await persistIsolatedRun(runDir, meta, manifest)
+
+    const result = await applyIsolatedRunDir(runDir)
+    expect(result.applied.sort()).toEqual(['edit.txt', 'gone.txt', 'new.txt'])
+    expect(result.skipped).toEqual([])
+    expect(result.removed).toBe(true)
+    expect(readFileSync(join(src, 'edit.txt'), 'utf8')).toBe('after')
+    expect(readFileSync(join(src, 'new.txt'), 'utf8')).toBe('new')
+    expect(existsSync(join(src, 'gone.txt'))).toBe(false)
+    expect(readFileSync(join(src, 'keep.txt'), 'utf8')).toBe('keep')
+    expect(existsSync(runDir)).toBe(false)
+  })
+
+  it('skips files the user changed since the run started instead of overwriting them', async () => {
+    const root = scratch()
+    const src = join(root, 'ws')
+    mkdirSync(src, { recursive: true })
+    writeFileSync(join(src, 'edit.txt'), 'before', 'utf8')
+
+    const runDir = join(root, 'run')
+    const workspace = join(runDir, 'workspace')
+    await materializeIsolatedWorkspace(src, workspace)
+    const manifest = await snapshotTree(workspace)
+    writeFileSync(join(workspace, 'edit.txt'), 'agent', 'utf8')
+    writeFileSync(join(src, 'edit.txt'), 'user', 'utf8')
+    const { changes, truncated } = await diffAgainstManifest(workspace, manifest)
+    await persistIsolatedRun(
+      runDir,
+      {
+        runId: 'run-1',
+        routineId: 'routine-1',
+        routineName: 'test',
+        sourcePath: src,
+        createdAt: Date.now(),
+        changes,
+        truncated,
+      },
+      manifest,
+    )
+
+    const result = await applyIsolatedRunDir(runDir)
+    expect(result.applied).toEqual([])
+    expect(result.skipped).toEqual([{ path: 'edit.txt', reason: '源文件已被外部修改' }])
+    expect(result.removed).toBe(false)
+    expect(readFileSync(join(src, 'edit.txt'), 'utf8')).toBe('user')
   })
 })

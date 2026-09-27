@@ -3,12 +3,16 @@ import { existsSync } from 'fs'
 import { loadChannels, sendToChannel } from './channels'
 import { appendAppLog, normalizeError } from './app-log'
 import {
-  diffWorkspaceTrees,
+  diffAgainstManifest,
+  discardIsolatedRun,
+  isolatedRunDir,
   isolatedWorkspaceDir,
   materializeIsolatedWorkspace,
-  removeIsolatedWorkspace,
-  type WorkspaceChange,
+  persistIsolatedRun,
+  snapshotTree,
+  type TreeManifest,
 } from './routine-isolation'
+import type { RoutineWorkspaceChange } from '../shared/ipc/contract'
 import {
   WorkflowCancelledError,
   broadcast,
@@ -66,8 +70,8 @@ export async function executeRoutine(
     summary: '',
     durationMs: 0,
   }))
-  // 隔离开启时:副本相对真实工作区的变更,跑完作为证据写进结果(不自动应用)
-  let isolatedChanges: WorkspaceChange[] = []
+  // 隔离开启时:副本相对源工作区的变更,跑完作为证据保留(供应用/丢弃,不自动应用)
+  let isolatedChanges: RoutineWorkspaceChange[] = []
   let isolatedTruncated = false
 
   const stepProgress = (stepIndex: number, s: RoutineStepProgress['status']): void => {
@@ -139,14 +143,15 @@ export async function executeRoutine(
     if (!existsSync(routine.workspacePath)) {
       throw new Error(`工作区不存在: ${routine.workspacePath}`)
     }
-    // 隔离模式:agent 跑在工作区的一次性副本里,改动只报告不应用
-    const isolatedDir = routine.workspaceMode === 'isolated' ? isolatedWorkspaceDir(runId) : null
-    let isolatedReady = false
+    // 隔离模式:agent 跑在工作区的一次性副本里;跑完保留变更供用户应用
+    const isolatedRunPath = routine.workspaceMode === 'isolated' ? isolatedRunDir(runId) : null
+    const isolatedWorkspacePath = isolatedRunPath ? isolatedWorkspaceDir(runId) : null
+    let isolatedManifest: TreeManifest | null = null
     try {
-      if (isolatedDir) {
-        await materializeIsolatedWorkspace(routine.workspacePath, isolatedDir)
-        isolatedReady = true
-        ctx.agentCwd = isolatedDir
+      if (isolatedWorkspacePath) {
+        await materializeIsolatedWorkspace(routine.workspacePath, isolatedWorkspacePath)
+        isolatedManifest = await snapshotTree(isolatedWorkspacePath)
+        ctx.agentCwd = isolatedWorkspacePath
       }
       for (const [index, step] of routine.steps.entries()) {
         throwIfWorkflowCancelled(signal)
@@ -236,17 +241,40 @@ export async function executeRoutine(
     } finally {
       signal.removeEventListener('abort', cancelRun)
       await session.client?.dispose().catch(() => {})
-      if (isolatedDir) {
-        if (isolatedReady) {
+      if (isolatedRunPath) {
+        if (isolatedWorkspacePath && isolatedManifest) {
           try {
-            const result = await diffWorkspaceTrees(routine.workspacePath, isolatedDir)
+            const result = await diffAgainstManifest(isolatedWorkspacePath, isolatedManifest)
             isolatedChanges = result.changes
             isolatedTruncated = result.truncated
+            if (isolatedChanges.length > 0) {
+              // 有变更就保留副本,等用户应用 / 丢弃
+              await persistIsolatedRun(
+                isolatedRunPath,
+                {
+                  runId,
+                  routineId: routine.id,
+                  routineName: routine.name,
+                  sourcePath: routine.workspacePath,
+                  createdAt: Date.now(),
+                  changes: isolatedChanges,
+                  truncated: isolatedTruncated,
+                },
+                isolatedManifest,
+              )
+            } else {
+              await discardIsolatedRun(isolatedRunPath)
+            }
           } catch (error) {
-            appendAppLog('warn', 'routines.isolation', 'Failed to diff the isolated workspace', normalizeError(error))
+            appendAppLog('warn', 'routines.isolation', 'Failed to finalize the isolated workspace', normalizeError(error))
+            isolatedChanges = []
+            isolatedTruncated = false
+            await discardIsolatedRun(isolatedRunPath).catch(() => {})
           }
+        } else {
+          // materialize 失败:清掉残留
+          await discardIsolatedRun(isolatedRunPath).catch(() => {})
         }
-        await removeIsolatedWorkspace(isolatedDir).catch(() => {})
       }
     }
   } catch (err) {
