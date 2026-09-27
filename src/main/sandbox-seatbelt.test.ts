@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -213,7 +213,15 @@ describe.skipIf(process.platform !== 'darwin')('the profile actually confines wr
       )
       expect(external.ok).toBe(false)
 
-      const allowed = run(profilePath, `/usr/bin/curl -s --max-time 5 http://127.0.0.1:${port}/`)
+      // 服务端就在本进程里:这里必须异步,execFileSync 会卡住事件循环,curl 连上了也等不到回包
+      const allowed = await new Promise<{ ok: boolean; output: string }>((resolve) => {
+        execFile(
+          '/usr/bin/sandbox-exec',
+          ['-f', profilePath, '/usr/bin/curl', '-s', '--max-time', '5', `http://127.0.0.1:${port}/`],
+          { encoding: 'utf8' },
+          (error, stdout, stderr) => resolve({ ok: !error, output: error ? stderr || String(error) : stdout }),
+        )
+      })
       expect(allowed.ok, allowed.output).toBe(true)
       expect(allowed.output).toContain('proxy-ok')
     } finally {
