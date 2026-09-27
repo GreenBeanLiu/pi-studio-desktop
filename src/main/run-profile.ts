@@ -3,6 +3,7 @@ import type { AgentRuntimeConfig } from './agent-runtime-config'
 import { prepareAgentRuntime } from './agent-runtime-config'
 import { resolvePiCliPath } from './pi-process'
 import { prepareSandboxLaunch, sandboxAgentPath } from './sandbox'
+import type { SandboxPrepareOptions } from './sandbox-backend'
 import { loadSettings } from './settings'
 import type { ExecutionSecuritySnapshot, SandboxMode } from '../shared/ipc/contract'
 import { DEFAULT_THINKING_LEVEL } from '../shared/agent-defaults'
@@ -13,6 +14,8 @@ export type RunProfileKind = 'chat' | 'routine' | 'code-model' | 'blender-model'
 export type RunProfileCompileOptions = {
   extensions?: string[]
   subagentsAvailable?: boolean
+  /** 工作区只读:去掉写工具,并让沙箱把工作区只读挂载。 */
+  workspaceReadOnly?: boolean
 }
 
 export type CompiledRunProfile = {
@@ -36,6 +39,7 @@ type RunProfileCompilerDependencies = {
   prepareSandbox: (
     cwd: string,
     env: Record<string, string>,
+    options: SandboxPrepareOptions,
   ) => Promise<{ cliPath: string; env: Record<string, string>; mode: SandboxMode }>
   resolveCliPath: () => string
 }
@@ -62,45 +66,52 @@ function profileDigest(profile: Omit<CompiledRunProfile, 'profileDigest' | 'env'
 function securitySnapshot(
   kind: RunProfileKind,
   sandboxMode: SandboxMode | null,
+  workspaceReadOnly = false,
 ): ExecutionSecuritySnapshot {
   const hostCodeExecution = kind === 'code-model' || kind === 'blender-model'
+  // 只读工作区在沙箱里是只读挂载,快照要如实报,别把只读 routine 记成可写。
+  const filesystemMode = workspaceReadOnly ? ('workspace-read-only' as const) : ('workspace-write' as const)
+  const readOnlyNote = workspaceReadOnly ? ' The workspace is mounted read-only.' : ''
   if (sandboxMode === 'wsl') {
     return {
       requested: 'confined',
-      filesystemMode: 'workspace-write',
+      filesystemMode,
       networkMode: 'allowlist',
       backend: 'wsl-bwrap',
       enforcement: hostCodeExecution ? 'partial' : 'full',
       hostCodeExecution,
-      reason: hostCodeExecution
-        ? 'Pi is confined by WSL bubblewrap and the outbound allowlist; generated code is still executed by the host.'
-        : 'Pi is confined by WSL bubblewrap and the outbound allowlist.',
+      reason:
+        (hostCodeExecution
+          ? 'Pi is confined by WSL bubblewrap and the outbound allowlist; generated code is still executed by the host.'
+          : 'Pi is confined by WSL bubblewrap and the outbound allowlist.') + readOnlyNote,
     }
   }
   if (sandboxMode === 'seatbelt') {
     return {
       requested: 'confined',
-      filesystemMode: 'workspace-write',
+      filesystemMode,
       networkMode: 'allowlist',
       backend: 'macos-seatbelt',
       enforcement: hostCodeExecution ? 'partial' : 'full',
       hostCodeExecution,
-      reason: hostCodeExecution
-        ? 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox; generated code is still executed by the host.'
-        : 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox.',
+      reason:
+        (hostCodeExecution
+          ? 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox; generated code is still executed by the host.'
+          : 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox.') + readOnlyNote,
     }
   }
   if (sandboxMode === 'docker') {
     return {
       requested: 'confined',
-      filesystemMode: 'workspace-write',
+      filesystemMode,
       networkMode: 'unrestricted',
       backend: 'docker',
       enforcement: 'partial',
       hostCodeExecution,
-      reason: hostCodeExecution
-        ? 'Pi filesystem access is confined by Docker; outbound network access and generated host code execution are unrestricted.'
-        : 'Pi filesystem access is confined by Docker; outbound network access is unrestricted.',
+      reason:
+        (hostCodeExecution
+          ? 'Pi filesystem access is confined by Docker; outbound network access and generated host code execution are unrestricted.'
+          : 'Pi filesystem access is confined by Docker; outbound network access is unrestricted.') + readOnlyNote,
     }
   }
   return {
@@ -110,7 +121,9 @@ function securitySnapshot(
     backend: 'host',
     enforcement: 'none',
     hostCodeExecution,
-    reason: 'Sandbox is disabled; Pi runs with the desktop user permissions.',
+    reason: workspaceReadOnly
+      ? 'Sandbox is disabled; Pi runs with the desktop user permissions, but this run is limited to read-only tools.'
+      : 'Sandbox is disabled; Pi runs with the desktop user permissions.',
   }
 }
 
@@ -126,11 +139,16 @@ function isolatedArgs(extensions: string[], tools: string): string[] {
   ]
 }
 
+/** 无人值守 routine 的 agent 工具集。只读时去掉 edit/write —— routine 没有 shell 工具,
+ * 所以去掉写工具就等于去掉 agent 侧的写能力。 */
+const ROUTINE_TOOLS = 'read,edit,write,grep,find,ls,web_search'
+const ROUTINE_READ_ONLY_TOOLS = 'read,grep,find,ls,web_search'
+
 function runArgs(kind: RunProfileKind, options: RunProfileCompileOptions): string[] {
   if (kind === 'routine') {
     return isolatedArgs(
       [...new Set(options.extensions ?? [])],
-      'read,edit,write,grep,find,ls,web_search',
+      options.workspaceReadOnly ? ROUTINE_READ_ONLY_TOOLS : ROUTINE_TOOLS,
     )
   }
   if (kind === 'code-model' || kind === 'blender-model') {
@@ -150,9 +168,11 @@ export class RunProfileCompiler {
     const settings = this.dependencies.loadSettings()
     const runtime = await this.dependencies.prepareRuntime(cwd)
     const prepared = settings.sandboxEnabled
-      ? await this.dependencies.prepareSandbox(cwd, runtime.env)
+      ? await this.dependencies.prepareSandbox(cwd, runtime.env, {
+          workspaceReadOnly: options.workspaceReadOnly,
+        })
       : { cliPath: this.dependencies.resolveCliPath(), env: runtime.env, mode: null }
-    const security = securitySnapshot(kind, prepared.mode)
+    const security = securitySnapshot(kind, prepared.mode, options.workspaceReadOnly)
     const sandboxMode = prepared.mode
     const profileOptions = sandboxMode
       ? {

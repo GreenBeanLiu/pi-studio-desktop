@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { RunProfileCompiler } from './run-profile'
 
 describe('RunProfileCompiler', () => {
@@ -112,6 +112,47 @@ describe('RunProfileCompiler', () => {
       hostCodeExecution: false,
       reason: 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox.',
     })
+  })
+
+  it('drops write tools and marks the workspace read-only for read-only routines', async () => {
+    const prepareSandbox = vi.fn(async () => ({ cliPath: '/shim.cjs', env: {}, mode: 'wsl' as const }))
+    const compiler = new RunProfileCompiler({
+      loadSettings: () => ({ sandboxEnabled: true }),
+      prepareRuntime: async () => ({ provider: 'openai', env: {}, gatewayProfiles: [] }),
+      prepareSandbox,
+      resolveCliPath: () => 'unused',
+    })
+
+    const profile = await compiler.compile('routine', 'D:\\repo', { workspaceReadOnly: true })
+
+    expect(profile.args).toEqual([
+      '--no-extensions',
+      '--no-skills',
+      '--no-prompt-templates',
+      '--no-context-files',
+      '--tools',
+      'read,grep,find,ls,web_search',
+    ])
+    expect(prepareSandbox).toHaveBeenCalledWith('D:\\repo', {}, { workspaceReadOnly: true })
+    expect(profile.security.filesystemMode).toBe('workspace-read-only')
+    expect(profile.security.reason).toContain('read-only')
+  })
+
+  it('keeps the host posture honest for a read-only routine without a sandbox', async () => {
+    const compiler = new RunProfileCompiler({
+      loadSettings: () => ({ sandboxEnabled: false }),
+      prepareRuntime: async () => ({ provider: 'openai', env: {}, gatewayProfiles: [] }),
+      prepareSandbox: async () => {
+        throw new Error('unused')
+      },
+      resolveCliPath: () => 'C:\\pi\\cli.js',
+    })
+
+    const profile = await compiler.compile('routine', 'D:\\repo', { workspaceReadOnly: true })
+
+    expect(profile.args).toContain('read,grep,find,ls,web_search')
+    expect(profile.security.filesystemMode).toBe('danger-full-access')
+    expect(profile.security.reason).toContain('read-only tools')
   })
 
   it('compiles model builders with the minimum Pi capability set', async () => {

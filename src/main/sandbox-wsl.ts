@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
 import { agentConfigDir, loadSettings } from './settings'
+import type { SandboxPrepareOptions } from './sandbox-backend'
 import { startSandboxProxy } from './sandbox-proxy'
 import { appendAppLog } from './app-log'
 
@@ -107,6 +108,7 @@ child.on('close', (code) => process.exit(code ?? 0))
 export async function prepareWslSandboxLaunch(
   cwd: string,
   env: Record<string, string>,
+  options: SandboxPrepareOptions = {},
 ): Promise<{ cliPath: string; env: Record<string, string> }> {
   const wsWsl = windowsToWslPath(cwd)
   const agentWsl = windowsToWslPath(agentConfigDir())
@@ -119,6 +121,7 @@ export async function prepareWslSandboxLaunch(
 
   // bwrap:整盘只读 + 工作区/agent 目录可写 + 私有 /tmp;网络共享发行版 netns
   // (mirrored 模式下 127.0.0.1 即主机),出站由 HTTPS_PROXY 收敛到白名单代理。
+  // 只读工作区:不额外 bind 工作区即可 —— 整盘已经是 --ro-bind / /,天然只读。
   const wslArgs = [
     '-d',
     WSL_SANDBOX_DISTRO,
@@ -130,7 +133,7 @@ export async function prepareWslSandboxLaunch(
     '--dev', '/dev',
     '--proc', '/proc',
     '--tmpfs', '/tmp',
-    '--bind', wsWsl, wsWsl,
+    ...(options.workspaceReadOnly ? [] : ['--bind', wsWsl, wsWsl]),
     '--bind', agentWsl, agentWsl,
     '--unshare-pid',
     '--die-with-parent',

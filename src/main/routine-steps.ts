@@ -109,6 +109,7 @@ async function ensureAgentClient(
   const { client } = await runtimeHost.start('routine', routine.workspacePath, {
     extensions,
     signal,
+    workspaceReadOnly: routine.workspaceMode === 'read-only',
     onOwned: (cleanup) => {
       session.startupCleanup = cleanup
     },

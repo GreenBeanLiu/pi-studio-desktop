@@ -185,6 +185,11 @@ describe('parseRoutineSave', () => {
   it('rejects a bad notify value', () => {
     expect(() => parseRoutineSave({ ...base, notify: 'sometimes' })).toThrow('通知策略')
   })
+
+  it('accepts a read-only workspaceMode and rejects an unknown one', () => {
+    expect(parseRoutineSave({ ...base, workspaceMode: 'read-only' }).workspaceMode).toBe('read-only')
+    expect(() => parseRoutineSave({ ...base, workspaceMode: 'nope' })).toThrow('工作区写权限')
+  })
 })
 
 describe('parseSettingsSave', () => {

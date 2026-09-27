@@ -22,11 +22,20 @@ export type SandboxLaunch = {
   mode: SandboxMode
 }
 
+/** 每次启动的沙箱参数。`workspaceReadOnly` 让工作区只读(无人值守 routine 用)。 */
+export type SandboxPrepareOptions = {
+  workspaceReadOnly?: boolean
+}
+
 export type SandboxBackend = {
   id: SandboxMode
   /** 只判断可用性,不抛异常;真正的环境缺失报错留给 prepare,好带上修复指引 */
   available: () => Promise<boolean> | boolean
-  prepare: (cwd: string, env: Record<string, string>) => Promise<SandboxLaunch>
+  prepare: (
+    cwd: string,
+    env: Record<string, string>,
+    options: SandboxPrepareOptions,
+  ) => Promise<SandboxLaunch>
 }
 
 /**
@@ -38,9 +47,10 @@ export async function selectSandboxBackend(
   cwd: string,
   env: Record<string, string>,
   unavailableMessage: string,
+  options: SandboxPrepareOptions = {},
 ): Promise<SandboxLaunch> {
   for (const backend of backends) {
-    if (await backend.available()) return backend.prepare(cwd, env)
+    if (await backend.available()) return backend.prepare(cwd, env, options)
   }
   throw new Error(unavailableMessage)
 }

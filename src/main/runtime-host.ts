@@ -94,6 +94,9 @@ function compileOptions(options: RuntimeHostStartOptions): RunProfileCompileOpti
     ...(options.subagentsAvailable !== undefined
       ? { subagentsAvailable: options.subagentsAvailable }
       : {}),
+    ...(options.workspaceReadOnly !== undefined
+      ? { workspaceReadOnly: options.workspaceReadOnly }
+      : {}),
   }
 }
 

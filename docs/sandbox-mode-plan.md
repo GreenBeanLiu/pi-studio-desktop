@@ -272,3 +272,22 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 在 mac 上就是 `sandbox-exec` + localhost 白名单代理,和上面自建的是同一套原语,
 额外带来的是现成的域名白名单代理和跨平台一致性(Linux bwrap / Windows WFP)。
 自建这版已经能跑且零依赖;等要做网络收敛时再评估是否换过去更划算。
+
+---
+
+## 无人值守 routine 的只读工作区（2026-09-27）
+
+Routine 的 agent 节点默认以 `routine.workspacePath` 为 cwd、工具集含 `edit,write`，所以无人值守
+运行**能改真实仓库**。现在 Routine 有 `workspaceMode: 'read-write' | 'read-only'`（默认
+read-write，不改旧行为）：
+
+- **read-only** 时 agent profile 去掉 `edit,write`（routine 没有 shell 工具，去掉写工具即去掉
+  agent 侧的写能力）；
+- 开了沙箱时**工作区只读挂载**：WSL 靠整盘 `--ro-bind / /` 且不额外 bind 工作区；Seatbelt 把
+  工作区移出可写 subpath；Docker 挂 `:ro`。即使绕过工具直连写也被内核拦；
+- `ExecutionSecuritySnapshot.filesystemMode` 报 `workspace-read-only`（无沙箱时仍是
+  `danger-full-access`，只有工具集被收窄，reason 里说明）；
+- `export` 等主进程节点不受影响，产物仍落到真实工作区（它们不走 agent 沙箱）。
+
+设置页在工作流编辑器里有对应开关。真正的一次性工作副本 + diff 审阅（「输入只读 / 输出独立」
+的完整形态）仍是后续。

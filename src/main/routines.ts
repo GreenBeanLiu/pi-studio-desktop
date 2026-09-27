@@ -38,6 +38,8 @@ export type Routine = {
   notifyChannelId?: string
   /** 每步跑完就把该步产出推到 notifyChannelId(在飞书/手机上跟进,替代 App 内小预览) */
   pushEachStep?: boolean
+  /** agent 节点的工作区写权限(见 contract.ts 同名字段):read-only 时去写工具 + 沙箱只读挂载 */
+  workspaceMode?: 'read-write' | 'read-only'
   createdAt: number
   lastRunAt?: number
   /** 上次触发的时间槽(防止同一槽位重复触发,也让错过的槽当天补跑) */

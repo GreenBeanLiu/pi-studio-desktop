@@ -54,7 +54,7 @@ describe('selectSandboxBackend', () => {
     const env = { OPENAI_API_KEY: 'secret', HTTPS_PROXY: 'http://127.0.0.1:1' }
     await selectSandboxBackend([wsl.backend], 'D:\\Works\\proj', env, 'nope')
 
-    expect(wsl.prepare).toHaveBeenCalledWith('D:\\Works\\proj', env)
+    expect(wsl.prepare).toHaveBeenCalledWith('D:\\Works\\proj', env, {})
   })
 
   it('throws the fallback message when nothing is available', async () => {
@@ -62,5 +62,11 @@ describe('selectSandboxBackend', () => {
     await expect(selectSandboxBackend(none, '/ws', {}, '需要先准备沙箱环境')).rejects.toThrow(
       '需要先准备沙箱环境',
     )
+  })
+
+  it('passes prepare options through to the chosen backend', async () => {
+    const wsl = fakeBackend('wsl', true)
+    await selectSandboxBackend([wsl.backend], '/ws', {}, 'nope', { workspaceReadOnly: true })
+    expect(wsl.prepare).toHaveBeenCalledWith('/ws', {}, { workspaceReadOnly: true })
   })
 })

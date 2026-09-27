@@ -468,6 +468,11 @@ export type Routine = {
   notify: RoutineNotify
   notifyChannelId?: string
   pushEachStep?: boolean
+  /**
+   * agent 节点的沙箱强度。`read-only`:去掉写工具,并在沙箱内把工作区只读挂载
+   * (即使绕过工具直连写也被内核拦);`read-write`(默认)保持现状。
+   */
+  workspaceMode?: 'read-write' | 'read-only'
   createdAt: number
   lastRunAt?: number
 }
@@ -696,7 +701,7 @@ export type AgentRuntimePhase = 'closed' | 'starting' | 'idle' | 'running' | 'aw
 /** main 维护的 Agent 生命周期权威快照;revision 单调递增,乱序事件可弃 */
 export type ExecutionSecuritySnapshot = {
   requested: 'confined' | 'full-access'
-  filesystemMode: 'workspace-write' | 'danger-full-access'
+  filesystemMode: 'workspace-read-only' | 'workspace-write' | 'danger-full-access'
   networkMode: 'allowlist' | 'unrestricted'
   backend: 'wsl-bwrap' | 'docker' | 'macos-seatbelt' | 'host'
   enforcement: 'full' | 'partial' | 'none'

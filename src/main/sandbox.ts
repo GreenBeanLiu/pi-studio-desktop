@@ -5,7 +5,12 @@ import { join, dirname, posix, win32 } from 'path'
 import { resolvePiCliPath } from './pi-process'
 import { agentConfigDir } from './settings'
 import { detectSeatbelt, prepareSeatbeltSandboxLaunch } from './sandbox-seatbelt'
-import { selectSandboxBackend, type SandboxBackend, type SandboxLaunch } from './sandbox-backend'
+import {
+  selectSandboxBackend,
+  type SandboxBackend,
+  type SandboxLaunch,
+  type SandboxPrepareOptions,
+} from './sandbox-backend'
 import type { SandboxDetect, SandboxMode } from '../shared/ipc/contract'
 import { appendAppLog, normalizeError } from './app-log'
 import {
@@ -238,6 +243,8 @@ export function buildSandboxDockerArgs(opts: {
   hostWorkspace: string
   hostAgentDir: string
   envNames: string[]
+  /** 只读工作区:工作区挂成 :ro,无人值守 routine 用 */
+  workspaceReadOnly?: boolean
 }): string[] {
   const forwardedEnvNames = [
     ...new Set(
@@ -249,7 +256,7 @@ export function buildSandboxDockerArgs(opts: {
     '-i',
     '--rm',
     '-v',
-    `${opts.hostWorkspace}:/workspace`,
+    `${opts.hostWorkspace}:/workspace${opts.workspaceReadOnly ? ':ro' : ''}`,
     '-w',
     '/workspace',
     '-v',
@@ -268,8 +275,8 @@ export function buildSandboxDockerArgs(opts: {
 const seatbeltBackend: SandboxBackend = {
   id: 'seatbelt',
   available: () => detectSeatbelt(),
-  prepare: async (cwd, env) => ({
-    ...(await prepareSeatbeltSandboxLaunch(cwd, env, resolvePiCliPath())),
+  prepare: async (cwd, env, options) => ({
+    ...(await prepareSeatbeltSandboxLaunch(cwd, env, resolvePiCliPath(), options)),
     mode: 'seatbelt',
   }),
 }
@@ -279,14 +286,17 @@ const seatbeltBackend: SandboxBackend = {
 const wslBackend: SandboxBackend = {
   id: 'wsl',
   available: () => detectWslSandboxDistro(),
-  prepare: async (cwd, env) => ({ ...(await prepareWslSandboxLaunch(cwd, env)), mode: 'wsl' }),
+  prepare: async (cwd, env, options) => ({
+    ...(await prepareWslSandboxLaunch(cwd, env, options)),
+    mode: 'wsl',
+  }),
 }
 
 /** 历史回退:daemon 在跑才算候选;镜像缺失属于 prepare 阶段的修复指引错误。 */
 const dockerBackend: SandboxBackend = {
   id: 'docker',
   available: async () => (await detectDocker()).daemonRunning,
-  prepare: async (cwd, env) => {
+  prepare: async (cwd, env, options) => {
     const tag = sandboxImageTag()
     if (!(await imageExists(tag))) {
       throw new Error(`沙箱镜像不存在(${tag}) —— 请在 设置 → 安全策略 里点「构建镜像」`)
@@ -295,6 +305,7 @@ const dockerBackend: SandboxBackend = {
       image: tag,
       hostWorkspace: cwd,
       hostAgentDir: agentConfigDir(),
+      workspaceReadOnly: options.workspaceReadOnly,
       envNames: [
         ...Object.keys({ ...env, PI_STUDIO_MEMORY_FILE: '/agent/shared-memory.snapshot.json' }),
         // Preserve proxy settings used by the host for OpenAI-compatible gateways.
@@ -339,8 +350,9 @@ const SANDBOX_UNAVAILABLE =
 export function prepareSandboxLaunch(
   cwd: string,
   env: Record<string, string>,
+  options: SandboxPrepareOptions = {},
 ): Promise<SandboxLaunch> {
-  return selectSandboxBackend(SANDBOX_BACKENDS, cwd, env, SANDBOX_UNAVAILABLE)
+  return selectSandboxBackend(SANDBOX_BACKENDS, cwd, env, SANDBOX_UNAVAILABLE, options)
 }
 
 // ── 注册 ─────────────────────────────────────────────────────────

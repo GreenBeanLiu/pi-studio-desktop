@@ -54,6 +54,18 @@ describe('buildSeatbeltProfile', () => {
     )
   })
 
+  it('omits the workspace from the writable roots when read-only', () => {
+    const readOnly = buildSeatbeltProfile({
+      workspace: '/Users/me/repo',
+      agentDir: '/tmp/agent',
+      tmpDir: '/tmp/t',
+      workspaceWritable: false,
+    })
+    expect(readOnly).not.toContain('(subpath "/Users/me/repo")')
+    expect(readOnly).toContain('(subpath "/tmp/agent")')
+    expect(readOnly).toContain('(subpath "/tmp/t")')
+  })
+
   it('escapes paths so a quote cannot break out of the profile', () => {
     const nasty = buildSeatbeltProfile({
       workspace: '/tmp/we"ird\\path',

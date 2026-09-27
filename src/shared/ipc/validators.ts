@@ -151,6 +151,7 @@ export type ParsedRoutineSave = {
   notify: 'always' | 'error' | 'never'
   notifyChannelId?: string
   pushEachStep?: boolean
+  workspaceMode?: 'read-write' | 'read-only'
 }
 
 /** 只放行已知字段;steps 的逐项归一化仍由 routines.ts 的 normalizeStep 负责。 */
@@ -173,6 +174,13 @@ export function parseRoutineSave(value: unknown): ParsedRoutineSave {
   if (value.pushEachStep !== undefined) {
     if (typeof value.pushEachStep !== 'boolean') throw new TypeError('逐步推送开关无效')
     out.pushEachStep = value.pushEachStep
+  }
+  if (value.workspaceMode !== undefined) {
+    out.workspaceMode = oneOf(
+      value.workspaceMode,
+      ['read-write', 'read-only'] as const,
+      '工作区写权限',
+    )
   }
   return out
 }

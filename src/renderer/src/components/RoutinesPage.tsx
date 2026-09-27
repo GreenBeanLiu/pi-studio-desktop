@@ -117,6 +117,7 @@ type FormState = {
   notify: RoutineNotify
   notifyChannelId?: string
   pushEachStep?: boolean
+  workspaceMode?: 'read-write' | 'read-only'
 }
 
 /** '' = 不传 size,让服务端定;其余取值与生图页保持一致。 */
@@ -692,6 +693,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
       notify: form.notify,
       ...(form.notifyChannelId ? { notifyChannelId: form.notifyChannelId } : {}),
       ...(form.pushEachStep ? { pushEachStep: true } : {}),
+      workspaceMode: form.workspaceMode ?? 'read-write',
     })
     setRoutines(next)
     setForm(null)
@@ -812,6 +814,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
       notify: r.notify,
       notifyChannelId: r.notifyChannelId,
       pushEachStep: r.pushEachStep,
+      workspaceMode: r.workspaceMode,
     })
   }
 
@@ -1464,6 +1467,15 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
                   <Switch checked={!!form.pushEachStep} onChange={(v) => setForm({ ...form, pushEachStep: v })} />
                   <span className={styles.hint}>
                     每步跑完就把该步产出实时推到上面的渠道(在飞书/手机上跟进进度,替代 App 内小预览)
+                  </span>
+                </div>
+                <div className={styles.formRow}>
+                  <Switch
+                    checked={form.workspaceMode === 'read-only'}
+                    onChange={(v) => setForm({ ...form, workspaceMode: v ? 'read-only' : 'read-write' })}
+                  />
+                  <span className={styles.hint}>
+                    只读工作区:agent 节点去掉写工具;沙箱模式下工作区只读挂载。无人值守运行不会改动仓库。
                   </span>
                 </div>
                 <div className={styles.formRow} style={{ justifyContent: 'flex-end' }}>

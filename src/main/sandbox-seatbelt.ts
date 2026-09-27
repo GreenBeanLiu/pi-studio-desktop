@@ -5,6 +5,7 @@ import { join } from 'path'
 import { appendAppLog } from './app-log'
 import { agentConfigDir, loadSettings } from './settings'
 import { startSandboxProxy } from './sandbox-proxy'
+import type { SandboxPrepareOptions } from './sandbox-backend'
 
 /**
  * macOS 原生沙箱(Seatbelt / sandbox-exec)。
@@ -56,8 +57,14 @@ export function buildSeatbeltProfile(opts: {
   tmpDir: string
   /** 提供时把出站收敛到主机侧白名单代理(只放行该 localhost 端口) */
   proxyPort?: number
+  /** 工作区是否可写(默认 true);false 时只放行 agent 目录与临时目录。 */
+  workspaceWritable?: boolean
 }): string {
-  const writable = [opts.workspace, opts.agentDir, opts.tmpDir].map(resolved)
+  const writableRoots =
+    opts.workspaceWritable === false
+      ? [opts.agentDir, opts.tmpDir]
+      : [opts.workspace, opts.agentDir, opts.tmpDir]
+  const writable = writableRoots.map(resolved)
   const networkRules = opts.proxyPort
     ? [
         '',
@@ -121,6 +128,7 @@ export async function prepareSeatbeltSandboxLaunch(
   cwd: string,
   env: Record<string, string>,
   realCliPath: string,
+  options: SandboxPrepareOptions = {},
 ): Promise<{ cliPath: string; env: Record<string, string> }> {
   if (!detectSeatbelt()) {
     throw new Error(`macOS 沙箱不可用:找不到 ${SEATBELT_BIN}`)
@@ -129,7 +137,13 @@ export async function prepareSeatbeltSandboxLaunch(
   // 出站强制走主机侧白名单代理,与 WSL 路线同一套策略:LLM 流量从主机进程出网,
   // 沙箱内只放行这一个 localhost 端口;白名单外域名由代理拒绝。
   const proxyPort = await startSandboxProxy('127.0.0.1', loadSettings().sandboxAllowedHosts)
-  const profile = buildSeatbeltProfile({ workspace: cwd, agentDir, tmpDir: tmpdir(), proxyPort })
+  const profile = buildSeatbeltProfile({
+    workspace: cwd,
+    agentDir,
+    tmpDir: tmpdir(),
+    proxyPort,
+    workspaceWritable: !options.workspaceReadOnly,
+  })
   const profilePath = join(app.getPath('userData'), 'sandbox-seatbelt.sb')
   writeFileSync(profilePath, profile, 'utf-8')
 

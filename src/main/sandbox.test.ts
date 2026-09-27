@@ -48,6 +48,11 @@ describe('buildSandboxDockerArgs', () => {
     const eFlags = args.filter((_, i) => args[i - 1] === '-e')
     expect(eFlags.filter((v) => v === 'OPENAI_API_KEY')).toHaveLength(1)
   })
+
+  it('mounts the workspace read-only when requested', () => {
+    const args = buildSandboxDockerArgs({ ...base, envNames: [], workspaceReadOnly: true })
+    expect(args).toEqual(expect.arrayContaining(['-v', `${base.hostWorkspace}:/workspace:ro`]))
+  })
 })
 
 describe('sandbox RPC shim', () => {
