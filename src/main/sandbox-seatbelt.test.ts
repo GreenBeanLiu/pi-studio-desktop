@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -160,5 +161,63 @@ describe.skipIf(process.platform !== 'darwin')('the profile actually confines wr
 
     expect(result.ok, result.output).toBe(true)
     expect(result.output).toMatch(/\d+\.\d+\.\d+/)
+  })
+
+  // read-only 工作区:无人值守 routine 用,整盘可读但工作区不可写。
+  it('blocks writes to the workspace when it is mounted read-only', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-seatbelt-ro-'))
+    dirs.push(root)
+    const workspace = join(root, 'ws')
+    execFileSync('/bin/mkdir', [workspace])
+    const profilePath = join(root, 'ro.sb')
+    writeFileSync(
+      profilePath,
+      buildSeatbeltProfile({
+        workspace,
+        agentDir: join(root, 'agent'),
+        tmpDir: join(root, 'tmp'),
+        workspaceWritable: false,
+      }),
+      'utf8',
+    )
+
+    const result = run(profilePath, `echo x > ${workspace}/f.txt`)
+    expect(result.ok).toBe(false)
+    expect(existsSync(join(workspace, 'f.txt'))).toBe(false)
+  })
+
+  // 网络收敛:出站只放行主机侧白名单代理的 localhost 端口,公网一律被拒。
+  it('blocks non-allowlisted outbound but reaches the local allowlist proxy port', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'pi-seatbelt-net-'))
+    dirs.push(root)
+    const server = createServer((_req, res) => res.end('proxy-ok'))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    try {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      const profilePath = join(root, 'net.sb')
+      writeFileSync(
+        profilePath,
+        buildSeatbeltProfile({
+          workspace: root,
+          agentDir: join(root, 'agent'),
+          tmpDir: join(root, 'tmp'),
+          proxyPort: port,
+        }),
+        'utf8',
+      )
+
+      const external = run(
+        profilePath,
+        '/usr/bin/curl -s --max-time 5 -o /dev/null https://example.com',
+      )
+      expect(external.ok).toBe(false)
+
+      const allowed = run(profilePath, `/usr/bin/curl -s --max-time 5 http://127.0.0.1:${port}/`)
+      expect(allowed.ok, allowed.output).toBe(true)
+      expect(allowed.output).toContain('proxy-ok')
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 })

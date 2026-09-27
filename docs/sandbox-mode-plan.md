@@ -255,10 +255,10 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 代价与 WSL 一致:白名单外的域名一律 403。内置名单之外需要放行的域名,在 设置 → 安全策略
 的「额外放行域名」里按行填写(`settings.sandboxAllowedHosts`),保存后重启工作区生效。
 
-**验证**(`src/main/sandbox-seatbelt.test.ts`,非 darwin 自动跳过):profile 形状 5 项 +
-真调 `sandbox-exec` 5 项 —— 工作区可写、区外写入被拒且原文件未改、区外删除被拒、
-系统路径可读,以及**真实 pi CLI 在沙箱里能启动**(Docker 那条正是死在这一步,
-而且从来没人真跑过)。
+**验证**(`src/main/sandbox-seatbelt.test.ts`,非 darwin 自动跳过):profile 形状 7 项 +
+真调 `sandbox-exec` 7 项 —— 工作区可写、区外写入被拒且原文件未改、区外删除被拒、
+系统路径可读、**只读工作区写入被拒**、**非白名单出站被拒且放行的 localhost 代理端口可达**,
+以及**真实 pi CLI 在沙箱里能启动**(Docker 那条正是死在这一步,而且从来没人真跑过)。
 
 **WSL 验证**(`src/main/sandbox-wsl.test.ts`,发行版就绪时真跑,否则跳过):`buildWslBwrapArgs`
 形状 2 项 + 真调 `wsl.exe … bwrap` 5 项 —— 工作区可写、区外写入被拒且原文件未改、系统路径可读、
