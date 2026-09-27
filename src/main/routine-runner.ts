@@ -3,6 +3,13 @@ import { existsSync } from 'fs'
 import { loadChannels, sendToChannel } from './channels'
 import { appendAppLog, normalizeError } from './app-log'
 import {
+  diffWorkspaceTrees,
+  isolatedWorkspaceDir,
+  materializeIsolatedWorkspace,
+  removeIsolatedWorkspace,
+  type WorkspaceChange,
+} from './routine-isolation'
+import {
   WorkflowCancelledError,
   broadcast,
   cancelPendingReviews,
@@ -59,6 +66,9 @@ export async function executeRoutine(
     summary: '',
     durationMs: 0,
   }))
+  // 隔离开启时:副本相对真实工作区的变更,跑完作为证据写进结果(不自动应用)
+  let isolatedChanges: WorkspaceChange[] = []
+  let isolatedTruncated = false
 
   const stepProgress = (stepIndex: number, s: RoutineStepProgress['status']): void => {
     const progress = {
@@ -89,6 +99,7 @@ export async function executeRoutine(
   const triggeredAt = new Date()
   const ctx: RunContext = {
     routine,
+    agentCwd: routine.workspacePath,
     triggerTime: triggeredAt.toLocaleString(),
     triggerStamp: pathStamp(triggeredAt),
     products: new Map(),
@@ -128,7 +139,15 @@ export async function executeRoutine(
     if (!existsSync(routine.workspacePath)) {
       throw new Error(`工作区不存在: ${routine.workspacePath}`)
     }
+    // 隔离模式:agent 跑在工作区的一次性副本里,改动只报告不应用
+    const isolatedDir = routine.workspaceMode === 'isolated' ? isolatedWorkspaceDir(runId) : null
+    let isolatedReady = false
     try {
+      if (isolatedDir) {
+        await materializeIsolatedWorkspace(routine.workspacePath, isolatedDir)
+        isolatedReady = true
+        ctx.agentCwd = isolatedDir
+      }
       for (const [index, step] of routine.steps.entries()) {
         throwIfWorkflowCancelled(signal)
         const stepStartedAt = Date.now()
@@ -217,6 +236,18 @@ export async function executeRoutine(
     } finally {
       signal.removeEventListener('abort', cancelRun)
       await session.client?.dispose().catch(() => {})
+      if (isolatedDir) {
+        if (isolatedReady) {
+          try {
+            const result = await diffWorkspaceTrees(routine.workspacePath, isolatedDir)
+            isolatedChanges = result.changes
+            isolatedTruncated = result.truncated
+          } catch (error) {
+            appendAppLog('warn', 'routines.isolation', 'Failed to diff the isolated workspace', normalizeError(error))
+          }
+        }
+        await removeIsolatedWorkspace(isolatedDir).catch(() => {})
+      }
     }
   } catch (err) {
     status = signal.aborted || err instanceof WorkflowCancelledError ? 'cancelled' : timedOut ? 'timeout' : 'error'
@@ -234,12 +265,24 @@ export async function executeRoutine(
     return
   }
 
+  // 隔离副本的变更作为可审阅证据附在 summary 末尾(不自动应用)
+  const isolationSummary = isolatedChanges.length
+    ? `\n\n隔离副本变更(${isolatedChanges.length}${isolatedTruncated ? '+' : ''} 项,未应用):\n` +
+      isolatedChanges
+        .slice(0, 50)
+        .map(
+          (change) =>
+            `${change.kind === 'added' ? '+' : change.kind === 'deleted' ? '-' : 'M'} ${change.path}`,
+        )
+        .join('\n')
+    : ''
+
   const summary =
-    stepResults
+    (stepResults
       .filter((s) => s.status !== 'skipped')
       .map((s, i) => `Step ${i + 1} - ${s.name}\n${s.summary}`)
       .join('\n\n')
-      .slice(0, 4000) || '(no output)'
+      .slice(0, 4000) || '(no output)') + isolationSummary
 
   const run: RoutineRun = {
     id: runId,
@@ -267,6 +310,7 @@ export async function executeRoutine(
       durationMs: run.endedAt - run.startedAt,
       summary,
       error: errorMsg ?? null,
+      ...(isolatedChanges.length ? { changedFiles: isolatedChanges } : {}),
     },
   )
   liveStepProgress.delete(routine.id)

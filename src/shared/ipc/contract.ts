@@ -469,10 +469,11 @@ export type Routine = {
   notifyChannelId?: string
   pushEachStep?: boolean
   /**
-   * agent 节点的沙箱强度。`read-only`:去掉写工具,并在沙箱内把工作区只读挂载
-   * (即使绕过工具直连写也被内核拦);`read-write`(默认)保持现状。
+   * agent 节点的隔离强度。`read-only`:去掉写工具,并在沙箱内把工作区只读挂载;
+   * `isolated`:agent 跑在一次性工作区副本里(改动只报告、不自动应用)；
+   * `read-write`(默认)保持现状。
    */
-  workspaceMode?: 'read-write' | 'read-only'
+  workspaceMode?: 'read-write' | 'read-only' | 'isolated'
   createdAt: number
   lastRunAt?: number
 }

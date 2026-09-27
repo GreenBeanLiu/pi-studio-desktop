@@ -121,11 +121,20 @@ describe('RoutineDatabase', () => {
     database.close()
   })
 
+  it('round-trips the routine workspaceMode (migration v6)', () => {
+    const paths = createPaths()
+    const store = fixture()
+    store.routines[0].workspaceMode = 'isolated'
+    const database = new RoutineDatabase(paths.database, paths.legacy)
+    database.save(store)
+    expect(database.load().routines[0].workspaceMode).toBe('isolated')
+    database.close()
+  })
+
   it('does not mark a broken legacy file as imported and can retry', () => {
     const paths = createPaths()
     writeFileSync(paths.legacy, '{broken', 'utf8')
     expect(() => new RoutineDatabase(paths.database, paths.legacy)).toThrow()
-
     writeFileSync(paths.legacy, JSON.stringify(fixture()), 'utf8')
     const retried = new RoutineDatabase(paths.database, paths.legacy)
     expect(retried.load().routines).toHaveLength(1)

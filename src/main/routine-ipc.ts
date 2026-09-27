@@ -5,6 +5,7 @@ import { remoteControl } from './remote-control'
 import { parseRoutineSave } from '../shared/ipc/validators'
 import { isRoutineStepComplete } from './routine-step-validation'
 import { queueRoutineCloudSync, routineSyncOrigin } from './routine-cloud-sync'
+import { clearAllIsolatedWorkspaces } from './routine-isolation'
 import { RoutineScheduler, dueSlotKey } from './routine-scheduler'
 import {
   MAX_RUNS_KEPT,
@@ -36,6 +37,8 @@ const stepIsComplete = isRoutineStepComplete
 
 export function registerRoutines(): void {
   initRoutineStorage()
+  // 上次崩溃可能留下隔离副本目录 —— run 之间不复用,启动直接清掉
+  void clearAllIsolatedWorkspaces().catch(() => {})
   const store = loadStore()
   const db = getRoutineDatabase()
   const interrupted = db?.interruptOpenRoutineRuns() ?? []

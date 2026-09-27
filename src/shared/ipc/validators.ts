@@ -151,7 +151,7 @@ export type ParsedRoutineSave = {
   notify: 'always' | 'error' | 'never'
   notifyChannelId?: string
   pushEachStep?: boolean
-  workspaceMode?: 'read-write' | 'read-only'
+  workspaceMode?: 'read-write' | 'read-only' | 'isolated'
 }
 
 /** 只放行已知字段;steps 的逐项归一化仍由 routines.ts 的 normalizeStep 负责。 */
@@ -178,7 +178,7 @@ export function parseRoutineSave(value: unknown): ParsedRoutineSave {
   if (value.workspaceMode !== undefined) {
     out.workspaceMode = oneOf(
       value.workspaceMode,
-      ['read-write', 'read-only'] as const,
+      ['read-write', 'read-only', 'isolated'] as const,
       '工作区写权限',
     )
   }

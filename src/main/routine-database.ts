@@ -223,6 +223,11 @@ export class RoutineDatabase {
           ? { notifyChannelId: optionalString(row.notify_channel_id) }
           : {}),
         ...(pushEachStep !== undefined ? { pushEachStep: pushEachStep === 1 } : {}),
+        ...(row.workspace_mode === 'read-write' ||
+        row.workspace_mode === 'read-only' ||
+        row.workspace_mode === 'isolated'
+          ? { workspaceMode: row.workspace_mode }
+          : {}),
         createdAt: requiredNumber(row.created_at),
         ...(optionalNumber(row.last_run_at) !== undefined ? { lastRunAt: optionalNumber(row.last_run_at) } : {}),
         ...(optionalString(row.last_slot_key) !== undefined ? { lastSlotKey: optionalString(row.last_slot_key) } : {}),
@@ -637,6 +642,7 @@ export class RoutineDatabase {
     if (currentVersion < 3) this.migrateToVersion3()
     if (currentVersion < 4) this.migrateToVersion4()
     if (currentVersion < 5) this.migrateToVersion5()
+    if (currentVersion < 6) this.migrateToVersion6()
   }
 
   private migrateToVersion1(): void {
@@ -777,6 +783,17 @@ export class RoutineDatabase {
     )
   }
 
+  private migrateToVersion6(): void {
+    // agent 节点的工作区隔离强度(read-write / read-only / isolated)
+    this.transaction(() =>
+      this.db.exec(`
+      ALTER TABLE workflows ADD COLUMN workspace_mode TEXT;
+      INSERT INTO schema_migrations (version, applied_at)
+        VALUES (6, unixepoch('subsec') * 1000);
+    `),
+    )
+  }
+
   private importLegacyOnce(): void {
     const imported = this.db.prepare("SELECT value FROM metadata WHERE key = 'legacy_json_imported'").get()
     if (imported) return
@@ -798,8 +815,8 @@ export class RoutineDatabase {
     const insertWorkflow = this.db.prepare(`
       INSERT INTO workflows (
         id, name, input, workspace_path, schedule_json, enabled, notify,
-        notify_channel_id, push_each_step, created_at, last_run_at, last_slot_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        notify_channel_id, push_each_step, workspace_mode, created_at, last_run_at, last_slot_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     const insertStep = this.db.prepare(`
       INSERT INTO workflow_steps (
@@ -818,6 +835,7 @@ export class RoutineDatabase {
         routine.notify,
         routine.notifyChannelId ?? null,
         routine.pushEachStep === undefined ? null : routine.pushEachStep ? 1 : 0,
+        routine.workspaceMode ?? null,
         routine.createdAt,
         routine.lastRunAt ?? null,
         routine.lastSlotKey ?? null,

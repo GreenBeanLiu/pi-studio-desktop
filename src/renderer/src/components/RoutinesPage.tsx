@@ -10,6 +10,7 @@ import {
   Modal,
   Popconfirm,
   Select,
+  Segmented,
   Switch,
   Tag,
   TimePicker,
@@ -117,7 +118,7 @@ type FormState = {
   notify: RoutineNotify
   notifyChannelId?: string
   pushEachStep?: boolean
-  workspaceMode?: 'read-write' | 'read-only'
+  workspaceMode?: 'read-write' | 'read-only' | 'isolated'
 }
 
 /** '' = 不传 size,让服务端定;其余取值与生图页保持一致。 */
@@ -1470,12 +1471,23 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
                   </span>
                 </div>
                 <div className={styles.formRow}>
-                  <Switch
-                    checked={form.workspaceMode === 'read-only'}
-                    onChange={(v) => setForm({ ...form, workspaceMode: v ? 'read-only' : 'read-write' })}
+                  <Segmented
+                    size="small"
+                    value={form.workspaceMode ?? 'read-write'}
+                    onChange={(v) =>
+                      setForm({
+                        ...form,
+                        workspaceMode: v as 'read-write' | 'read-only' | 'isolated',
+                      })
+                    }
+                    options={[
+                      { value: 'read-write', label: '可写' },
+                      { value: 'read-only', label: '只读' },
+                      { value: 'isolated', label: '隔离副本' },
+                    ]}
                   />
                   <span className={styles.hint}>
-                    只读工作区:agent 节点去掉写工具;沙箱模式下工作区只读挂载。无人值守运行不会改动仓库。
+                    只读:agent 去掉写工具 + 沙箱只读挂载;隔离副本:agent 在一次性副本里跑,改动只报告不应用。
                   </span>
                 </div>
                 <div className={styles.formRow} style={{ justifyContent: 'flex-end' }}>

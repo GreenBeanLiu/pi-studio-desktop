@@ -42,6 +42,8 @@ import type { Routine, RoutineReviewRequest } from './routines'
 
 export type RunContext = {
   routine: Routine
+  /** agent 节点的实际 cwd:隔离开启时是本次运行的一次性副本目录,否则是 routine.workspacePath */
+  agentCwd?: string
   triggerTime: string
   /** 可直接进文件名的时间戳:{{trigger.time}} 是本地化文本,带冒号和斜杠,进不了路径。 */
   triggerStamp: string
@@ -97,6 +99,7 @@ export type AgentSession = {
 
 async function ensureAgentClient(
   routine: Routine,
+  ctx: RunContext,
   session: AgentSession,
   signal: AbortSignal,
 ): Promise<NonNullable<AgentSession['client']>> {
@@ -106,7 +109,7 @@ async function ensureAgentClient(
     prepareReviewedWorkspaceMemoryExtension(),
     prepareReviewedWebSearchExtension(!!settings.tavilyApiKey),
   ].filter((extension): extension is string => extension !== null)
-  const { client } = await runtimeHost.start('routine', routine.workspacePath, {
+  const { client } = await runtimeHost.start('routine', ctx.agentCwd ?? routine.workspacePath, {
     extensions,
     signal,
     workspaceReadOnly: routine.workspaceMode === 'read-only',
@@ -131,7 +134,7 @@ async function runAgentStep(
   markTimeout: () => void,
   signal: AbortSignal,
 ): Promise<StepProduct> {
-  const client = await ensureAgentClient(routine, session, signal)
+  const client = await ensureAgentClient(routine, ctx, session, signal)
   throwIfWorkflowCancelled(signal)
   // The client outlives one step, so only this step's denials belong in its output.
   const deniedBefore = client.deniedApprovals().length

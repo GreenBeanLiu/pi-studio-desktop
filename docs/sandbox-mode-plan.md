@@ -275,19 +275,23 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 
 ---
 
-## 无人值守 routine 的只读工作区（2026-09-27）
+## 无人值守 routine 的工作区隔离（2026-09-27）
 
 Routine 的 agent 节点默认以 `routine.workspacePath` 为 cwd、工具集含 `edit,write`，所以无人值守
-运行**能改真实仓库**。现在 Routine 有 `workspaceMode: 'read-write' | 'read-only'`（默认
-read-write，不改旧行为）：
+运行**能改真实仓库**。现在 Routine 有 `workspaceMode: 'read-write' | 'read-only' | 'isolated'`
+（默认 read-write，不改旧行为）：
 
-- **read-only** 时 agent profile 去掉 `edit,write`（routine 没有 shell 工具，去掉写工具即去掉
-  agent 侧的写能力）；
-- 开了沙箱时**工作区只读挂载**：WSL 靠整盘 `--ro-bind / /` 且不额外 bind 工作区；Seatbelt 把
-  工作区移出可写 subpath；Docker 挂 `:ro`。即使绕过工具直连写也被内核拦；
-- `ExecutionSecuritySnapshot.filesystemMode` 报 `workspace-read-only`（无沙箱时仍是
-  `danger-full-access`，只有工具集被收窄，reason 里说明）；
-- `export` 等主进程节点不受影响，产物仍落到真实工作区（它们不走 agent 沙箱）。
+- **read-only**：agent profile 去掉 `edit,write`（routine 没有 shell 工具，去掉写工具即去掉
+  agent 侧的写能力）；开了沙箱时**工作区只读挂载**——WSL 靠整盘 `--ro-bind / /` 且不额外 bind
+  工作区；Seatbelt 把工作区移出可写 subpath；Docker 挂 `:ro`。`ExecutionSecuritySnapshot.filesystemMode`
+  报 `workspace-read-only`（无沙箱时仍是 `danger-full-access`，只有工具集被收窄，reason 里说明）。
+- **isolated**：run 开始时把工作区按**当前工作树**（含未提交改动）拷进
+  `userData/routine-runs/<runId>/workspace`（过滤 `.git` / `node_modules` / `dist` / … 重目录），
+  agent 只在这个一次性副本里跑；跑完比对副本与原工作区，把变更文件清单（新增/修改/删除）写进 run
+  summary 与 terminal journal（`changedFiles`），**不自动应用**。副本在 `finally` 清理，启动时清掉
+  崩溃遗留（见 `src/main/routine-isolation.ts`）。不用 `git worktree`：worktree 只含 HEAD、不含
+  未提交改动。
+- 两种模式都只作用于 **agent 节点**：确定性节点（`export` / `imagegen` / `folder-input` / …）仍走
+  真实工作区。
 
-设置页在工作流编辑器里有对应开关。真正的一次性工作副本 + diff 审阅（「输入只读 / 输出独立」
-的完整形态）仍是后续。
+设置页的工作流编辑器有对应三态开关。「把变更应用回真实工作区」仍是后续。
