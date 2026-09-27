@@ -81,14 +81,13 @@ function securitySnapshot(
     return {
       requested: 'confined',
       filesystemMode: 'workspace-write',
-      // 只收窄了写权限,网络照旧 —— 别报成 allowlist
-      networkMode: 'unrestricted',
+      networkMode: 'allowlist',
       backend: 'macos-seatbelt',
-      enforcement: 'partial',
+      enforcement: hostCodeExecution ? 'partial' : 'full',
       hostCodeExecution,
       reason: hostCodeExecution
-        ? 'Pi filesystem writes are confined by the macOS Seatbelt sandbox; outbound network access and generated host code execution are unrestricted.'
-        : 'Pi filesystem writes are confined by the macOS Seatbelt sandbox; outbound network access is unrestricted.',
+        ? 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox; generated code is still executed by the host.'
+        : 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox.',
     }
   }
   if (sandboxMode === 'docker') {

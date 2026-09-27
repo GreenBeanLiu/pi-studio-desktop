@@ -93,6 +93,27 @@ describe('RunProfileCompiler', () => {
     })
   })
 
+  it('reports macOS Seatbelt confinement with the allowlist proxy', async () => {
+    const compiler = new RunProfileCompiler({
+      loadSettings: () => ({ sandboxEnabled: true }),
+      prepareRuntime: async () => ({ provider: 'openai', env: {}, gatewayProfiles: [] }),
+      prepareSandbox: async () => ({ cliPath: '/shim.cjs', env: {}, mode: 'seatbelt' }),
+      resolveCliPath: () => 'unused',
+    })
+
+    const profile = await compiler.compile('chat', '/Users/me/repo')
+
+    expect(profile.security).toEqual({
+      requested: 'confined',
+      filesystemMode: 'workspace-write',
+      networkMode: 'allowlist',
+      backend: 'macos-seatbelt',
+      enforcement: 'full',
+      hostCodeExecution: false,
+      reason: 'Pi filesystem writes and outbound network are confined by the macOS Seatbelt sandbox.',
+    })
+  })
+
   it('compiles model builders with the minimum Pi capability set', async () => {
     const compiler = new RunProfileCompiler({
       loadSettings: () => ({ sandboxEnabled: false }),

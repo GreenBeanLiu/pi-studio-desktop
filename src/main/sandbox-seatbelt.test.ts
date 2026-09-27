@@ -33,9 +33,25 @@ describe('buildSeatbeltProfile', () => {
     expect(profile).toContain('(regex #"^/dev/fd/")')
   })
 
-  it('does not confine the network', () => {
-    // 只做文件隔离(2026-08-23 决定);要收紧时加 (deny network*) + 放行代理端口
+  it('does not touch the network unless a proxy port is given', () => {
+    // 宽松档(缺省):只做文件隔离,不碰网络
     expect(profile).not.toContain('deny network')
+  })
+
+  it('confines outbound to the allowlist proxy port when one is given', () => {
+    const confined = buildSeatbeltProfile({
+      workspace: '/Users/me/repo',
+      agentDir: '/tmp/agent',
+      tmpDir: '/tmp/t',
+      proxyPort: 18923,
+    })
+    expect(confined).toContain('(deny network*)')
+    expect(confined).toContain('(allow network-outbound (remote ip "localhost:18923"))')
+    // deny 必须排在 allow default 之后才生效;放行规则再排在 deny 之后
+    expect(confined.indexOf('(allow default)')).toBeLessThan(confined.indexOf('(deny network*)'))
+    expect(confined.indexOf('(deny network*)')).toBeLessThan(
+      confined.indexOf('(allow network-outbound'),
+    )
   })
 
   it('escapes paths so a quote cannot break out of the profile', () => {

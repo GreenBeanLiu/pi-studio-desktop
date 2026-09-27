@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { appendAppLog } from './app-log'
 import { agentConfigDir } from './settings'
+import { startSandboxProxy } from './sandbox-proxy'
 
 /**
  * macOS 原生沙箱(Seatbelt / sandbox-exec)。
@@ -13,9 +14,10 @@ import { agentConfigDir } from './settings'
  * sandbox-exec 是系统自带的内核级沙箱,无 daemon、无虚机、无镜像,
  * 进程级启动,和 Linux 的 bwrap 对位。
  *
- * 当前只做**文件隔离**:整盘可读、仅工作区 / agent 目录 / 临时目录可写。
- * 网络不收敛 —— 白名单代理(sandbox-proxy.ts)留着,将来要收紧时把
- * `(deny network*)` + 只放行 localhost:<代理端口> 加回来即可(已实测可行)。
+ * 文件隔离:整盘可读、仅工作区 / agent 目录 / 临时目录可写。
+ * 网络收敛:与 WSL 路线同一套策略 —— `(deny network*)` 后只放行主机侧白名单
+ * 代理(sandbox-proxy.ts)的 localhost 端口,LLM 流量从主机进程出网。
+ * 白名单外的域名会被代理拒绝(与 WSL 一致);需要放行时改 sandbox-proxy.ts 的名单。
  */
 
 const SEATBELT_BIN = '/usr/bin/sandbox-exec'
@@ -44,17 +46,31 @@ export function detectSeatbelt(): boolean {
  * 不用 `(deny default)` 全量白名单:那要把 mach 服务、sysctl、IPC 一条条列全,
  * 漏一条就是难查的运行时故障,而我们要的只是"别写工作区外面"。
  * SBPL 后写的规则覆盖先写的,所以顺序是 allow default → deny 写 → 放行几处可写。
+ *
+ * 传入 `proxyPort` 时顺带收敛出站:allow default 之后再 `(deny network*)`,
+ * 只放行该 localhost 端口的白名单代理。缺省则不碰网络(保持整盘可读的宽松档)。
  */
 export function buildSeatbeltProfile(opts: {
   workspace: string
   agentDir: string
   tmpDir: string
+  /** 提供时把出站收敛到主机侧白名单代理(只放行该 localhost 端口) */
+  proxyPort?: number
 }): string {
   const writable = [opts.workspace, opts.agentDir, opts.tmpDir].map(resolved)
+  const networkRules = opts.proxyPort
+    ? [
+        '',
+        ';; 出站只放行主机侧白名单代理(sandbox-proxy.ts):LLM 流量从主机进程出网,',
+        ';; 白名单外域名由代理拒绝。deny 写在 allow default 之后才生效。',
+        '(deny network*)',
+        `(allow network-outbound (remote ip "localhost:${opts.proxyPort}"))`,
+      ]
+    : []
   return [
     '(version 1)',
     '',
-    ';; pi-studio macOS 沙箱:只收窄写权限,读与网络保持放行',
+    `;; pi-studio macOS 沙箱:${opts.proxyPort ? '收窄写权限与出站' : '只收窄写权限,读与网络保持放行'}`,
     '(allow default)',
     '',
     '(deny file-write*)',
@@ -71,6 +87,7 @@ export function buildSeatbeltProfile(opts: {
     '  (regex #"^/dev/tty")',
     '  (regex #"^/dev/fd/")',
     ')',
+    ...networkRules,
     '',
   ].join('\n')
 }
@@ -109,7 +126,10 @@ export async function prepareSeatbeltSandboxLaunch(
     throw new Error(`macOS 沙箱不可用:找不到 ${SEATBELT_BIN}`)
   }
   const agentDir = agentConfigDir()
-  const profile = buildSeatbeltProfile({ workspace: cwd, agentDir, tmpDir: tmpdir() })
+  // 出站强制走主机侧白名单代理,与 WSL 路线同一套策略:LLM 流量从主机进程出网,
+  // 沙箱内只放行这一个 localhost 端口;白名单外域名由代理拒绝。
+  const proxyPort = await startSandboxProxy('127.0.0.1')
+  const profile = buildSeatbeltProfile({ workspace: cwd, agentDir, tmpDir: tmpdir(), proxyPort })
   const profilePath = join(app.getPath('userData'), 'sandbox-seatbelt.sb')
   writeFileSync(profilePath, profile, 'utf-8')
 
@@ -119,12 +139,16 @@ export async function prepareSeatbeltSandboxLaunch(
   appendAppLog('info', 'sandbox.seatbelt', 'Launching pi inside the macOS Seatbelt sandbox', {
     cwd,
     profilePath,
+    proxyPort,
   })
   // 路径不变(同一个文件系统),所以 sandboxAgentPath 对 seatbelt 是恒等的
   return {
     cliPath: shimPath,
     env: {
       ...env,
+      HTTP_PROXY: `http://127.0.0.1:${proxyPort}`,
+      HTTPS_PROXY: `http://127.0.0.1:${proxyPort}`,
+      NO_PROXY: 'localhost,127.0.0.1',
       PISTUDIO_SEATBELT_ARGS: JSON.stringify(['-f', profilePath]),
       PISTUDIO_SEATBELT_CLI: realCliPath,
     },

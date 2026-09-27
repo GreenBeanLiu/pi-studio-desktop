@@ -249,10 +249,11 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
   **`networkMode: 'unrestricted'`**(只做文件隔离,别报成 allowlist);
 - 标题栏徽标显示「沙箱·仅工作区可写」。
 
-**网络暂不收敛**(2026-08-23 决定):Seatbelt 只放行 `localhost:<代理端口>` 已实测可行,
-但白名单外的域名一律 403,agent 跑 `git clone github`、`curl` 文档都会被拦,
-需要按实际用法补名单。`sandbox-proxy.ts` 原样留着,要收紧时把
-`(deny network*)` + 放行代理端口加回 `buildSeatbeltProfile` 即可。
+**网络已收敛**(2026-09-27):Seatbelt 现在与 WSL 走同一套白名单代理 —— `buildSeatbeltProfile`
+在给出 `proxyPort` 时加 `(deny network*)` + 只放行 `localhost:<代理端口>`,shim 注入
+`HTTP_PROXY/HTTPS_PROXY`;`prepareSeatbeltSandboxLaunch` 启动 `sandbox-proxy.ts` 后必传该端口。
+代价与 WSL 一致:白名单外的域名一律 403,agent 跑 `git clone github`、`curl` 文档会被拦,
+需要按实际用法补 `sandbox-proxy.ts` 的名单。
 
 **验证**(`src/main/sandbox-seatbelt.test.ts`,非 darwin 自动跳过):profile 形状 5 项 +
 真调 `sandbox-exec` 5 项 —— 工作区可写、区外写入被拒且原文件未改、区外删除被拒、
@@ -261,8 +262,8 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 
 ### 若要进一步收紧,待办
 
-1. 复用 `sandbox-proxy.ts`,把 `(deny network*)` + `(allow network-outbound (remote ip "localhost:<port>"))`
-   加进 `buildSeatbeltProfile`,并给 shim 注入 `HTTPS_PROXY`。
+1. ~~复用 `sandbox-proxy.ts`,把 `(deny network*)` + `(allow network-outbound (remote ip "localhost:<port>"))`
+   加进 `buildSeatbeltProfile`,并给 shim 注入 `HTTPS_PROXY`。~~ 已完成(2026-09-27)。
 2. 先摸清实际需要的域名(github、各类文档站、非 npm 源的包管理器),否则一开就到处 403。
 3. 补 E2E:非白名单出站被拦(照 WSL 的验收标准)。
 
