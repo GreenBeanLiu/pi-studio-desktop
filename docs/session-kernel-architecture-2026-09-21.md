@@ -154,6 +154,9 @@ Renderer 中的 React state 也不能成为恢复依据。
    订阅事件、维护 status、挂接 process observers 和执行 cleanup。差异只留在 adapter 创建阶段。
 3. **给 session lifecycle 写行为测试。** 从 kernel interface 验证 start → prompt → approval →
    settle → switch → stop；测试 observable outcome，不直接断言内部数组。
+   **已补（2026-09-27）**：`pi-agent-pool.test.ts` 的 `session lifecycle behaviour` 覆盖
+   start → events → switch → stop → crash，断言 host 回调 / job 快照 / `find` 结果，不摸内部数组；
+   prompt / approval / settle 分别在 `pi-runtime.test.ts`（unattended approval gate）与投影层测试覆盖。
 4. **版本化跨仓库 tool operation envelope。** Desktop、control plane、runtime 共用 schema fixture；
    先用契约测试阻止漂移，再考虑抽共享 package。
 5. **补 recovery checkpoint。** 明确应用崩溃后哪些对象能恢复、哪些只能标记 interrupted；

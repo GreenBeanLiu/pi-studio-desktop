@@ -173,3 +173,101 @@ describe('AgentPool runtime host seam', () => {
     expect(poolHost.handleRuntimeEvent).toHaveBeenCalledWith(entry, { type: 'agent_start' })
   })
 })
+
+type ProcessHandlers = {
+  exit?: (code: number | null, signal: string | null) => void
+}
+
+/**
+ * session 生命周期的行为测试:从 AgentPool 这个 kernel 拥有层验证
+ * start → events → switch → stop → crash,断言 observable outcome
+ * (host 回调、job 快照、find 结果),不直接摸内部数组。
+ */
+describe('session lifecycle behaviour', () => {
+  beforeEach(() => {
+    userData = mkdtempSync(join(tmpdir(), 'pi-agent-pool-life-'))
+  })
+
+  afterEach(() => {
+    rmSync(userData, { recursive: true, force: true })
+  })
+
+  function sessionClient(sessionFile: string): PiAgentRunHandle {
+    return client({ getState: vi.fn(async () => ({ sessionId: 'session-1', sessionFile })) })
+  }
+
+  it('stops a session by releasing its job and removing it from the pool', async () => {
+    const runtimeClient = sessionClient('D:\\agent\\sessions\\a.jsonl')
+    const poolHost = host()
+    const pool = new AgentPool(poolHost, vi.fn(async () => ({ client: runtimeClient })))
+    pool.setLaunch(launchContext())
+
+    const entry = await pool.spawn(null)
+    expect(pool.find('D:\\agent\\sessions\\a.jsonl')).toBe(entry)
+    expect(pool.liveAgentCount()).toBe(1)
+
+    await pool.stopEntry(entry, 'workspace closed')
+
+    expect(runtimeClient.dispose).toHaveBeenCalledOnce()
+    expect(poolHost.onEntryRemoved).toHaveBeenCalledWith(entry)
+    expect(pool.find('D:\\agent\\sessions\\a.jsonl')).toBeUndefined()
+    expect(pool.liveAgentCount()).toBe(0)
+    expect(pool.agentJobs().every((job) => job.state === 'done')).toBe(true)
+  })
+
+  it('offers the existing entry for a session path so a switch does not spawn again', async () => {
+    const launchRuntime = vi.fn(async () => ({ client: sessionClient('D:\\agent\\sessions\\a.jsonl') }))
+    const pool = new AgentPool(host(), launchRuntime)
+    pool.setLaunch(launchContext())
+
+    await pool.spawn(null)
+
+    // 路径写法不同也要认出是同一个会话(否则切换会给它再起一个进程)
+    expect(pool.find('D:/agent/sessions/a.jsonl')).toBeDefined()
+    expect(pool.find('D:\\agent\\sessions\\other.jsonl')).toBeUndefined()
+    expect(launchRuntime).toHaveBeenCalledOnce()
+  })
+
+  it('marks an unexpected exit as a crash and reports it for the active session', async () => {
+    const handlers: ProcessHandlers = {}
+    const runtimeClient = client({
+      getState: vi.fn(async () => ({ sessionId: 'session-1', sessionFile: 'D:\\agent\\sessions\\a.jsonl' })),
+      observeProcess: vi.fn((next: ProcessHandlers) => {
+        Object.assign(handlers, next)
+      }),
+    })
+    const poolHost = host() // isActive → true
+    const pool = new AgentPool(poolHost, vi.fn(async () => ({ client: runtimeClient })))
+    pool.setLaunch(launchContext())
+
+    await pool.spawn(null)
+    handlers.exit?.(1, null)
+
+    expect(poolHost.emitStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'exited', code: 1, expected: false }),
+    )
+    expect(pool.find('D:\\agent\\sessions\\a.jsonl')).toBeUndefined()
+  })
+
+  it('reports a background crash as activity, not as a foreground error', async () => {
+    const handlers: ProcessHandlers = {}
+    const runtimeClient = client({
+      getState: vi.fn(async () => ({ sessionId: 'session-1', sessionFile: 'D:\\agent\\sessions\\a.jsonl' })),
+      observeProcess: vi.fn((next: ProcessHandlers) => {
+        Object.assign(handlers, next)
+      }),
+    })
+    const poolHost = { ...host(), isActive: () => false }
+    const pool = new AgentPool(poolHost, vi.fn(async () => ({ client: runtimeClient })))
+    pool.setLaunch(launchContext())
+
+    await pool.spawn(null)
+    handlers.exit?.(1, null)
+
+    expect(poolHost.emitActivity).toHaveBeenCalledWith({
+      sessionFile: 'D:\\agent\\sessions\\a.jsonl',
+      running: false,
+    })
+    expect(poolHost.emitStatus).not.toHaveBeenCalled()
+  })
+})
