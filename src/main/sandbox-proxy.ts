@@ -13,7 +13,7 @@ import { mergeAllowedHosts, parseAllowedHostList } from '../shared/sandbox-hosts
  * 额外名单在每次 startSandboxProxy 时刷新;同一时刻只有一个生效名单。
  */
 
-const DEFAULT_ALLOWED_HOSTS = [
+export const DEFAULT_ALLOWED_HOSTS = [
   'api.openai.com',
   'api.anthropic.com',
   'api.tavily.com',

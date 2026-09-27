@@ -3,6 +3,7 @@ import {
   buildSandboxDockerArgs,
   sandboxAgentPath,
   sandboxRpcShimSource,
+  sandboxRuntimeCapability,
   sandboxSessionPathToContainer,
   sandboxSessionPathToHost,
 } from './sandbox'
@@ -95,5 +96,33 @@ describe('sandbox session path mapping', () => {
         hostAgentDir,
       ),
     ).toBe('/agent/pi-studio-reviewed-extensions/web-search.ts')
+  })
+})
+
+describe('sandboxRuntimeCapability', () => {
+  it('reports platform backends and merges the user allowlist with the built-ins', () => {
+    const capability = sandboxRuntimeCapability({
+      platform: 'win32',
+      sandboxEnabled: true,
+      extraAllowedHosts: ['github.com', 'github.com'],
+    })
+
+    expect(capability.platform).toBe('windows')
+    expect(capability.backends).toEqual(['wsl', 'docker'])
+    expect(capability.enabled).toBe(true)
+    expect(capability.networkAllowlist).toEqual(
+      expect.arrayContaining(['api.openai.com', 'github.com']),
+    )
+    // 重复项被归一化,不会撑大名单
+    expect(capability.networkAllowlist.filter((host) => host === 'github.com')).toHaveLength(1)
+  })
+
+  it('maps macOS and Linux to their own backend sets', () => {
+    expect(
+      sandboxRuntimeCapability({ platform: 'darwin', sandboxEnabled: false, extraAllowedHosts: [] }),
+    ).toMatchObject({ platform: 'macos', backends: ['seatbelt', 'docker'], enabled: false })
+    expect(
+      sandboxRuntimeCapability({ platform: 'linux', sandboxEnabled: false, extraAllowedHosts: [] }),
+    ).toMatchObject({ platform: 'linux', backends: ['docker'] })
   })
 })

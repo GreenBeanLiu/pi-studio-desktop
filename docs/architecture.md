@@ -181,6 +181,12 @@ Runtime、Desktop、Mobile 的 envelope 收敛为单一版本化契约。
 `capabilities.localTools` 列出已实现的工具，`localFileMaxBytes` 为 65536。
 旧 host 没有这两个字段时，调用方不能推定它支持文件工具。
 
+`capabilities.sandbox` 报告本机的沙箱能力：`enabled`、`platform`、`backends`（按平台的候选后端，如
+Windows `['wsl','docker']`、macOS `['seatbelt','docker']`）、`networkAllowlist`（出站白名单实际
+放行的域名 = 内置 + 用户额外）。控制面据此知道这台设备能提供多强的隔离。**不返回实时探测结果**
+（探测要 spawn `docker`/`wsl`，不该每个 capabilities 请求都跑一遍）；旧 host 没有该字段时调用方
+不能推定支持沙箱。
+
 ```json
 {"type":"executeToolOperation","operationId":"toolop-1","toolName":"local.write","arguments":{"workspace":"D:\\Works\\example","path":"note.txt","content":"hello"}}
 ```

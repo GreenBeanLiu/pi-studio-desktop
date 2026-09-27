@@ -3,8 +3,10 @@ import { execFile, spawn } from 'child_process'
 import { writeFileSync, mkdirSync, readFileSync } from 'fs'
 import { join, dirname, posix, win32 } from 'path'
 import { resolvePiCliPath } from './pi-process'
-import { agentConfigDir } from './settings'
+import { agentConfigDir, loadSettings } from './settings'
 import { detectSeatbelt, prepareSeatbeltSandboxLaunch } from './sandbox-seatbelt'
+import { DEFAULT_ALLOWED_HOSTS } from './sandbox-proxy'
+import { mergeAllowedHosts } from '../shared/sandbox-hosts'
 import {
   selectSandboxBackend,
   type SandboxBackend,
@@ -353,6 +355,61 @@ export function prepareSandboxLaunch(
   options: SandboxPrepareOptions = {},
 ): Promise<SandboxLaunch> {
   return selectSandboxBackend(SANDBOX_BACKENDS, cwd, env, SANDBOX_UNAVAILABLE, options)
+}
+
+// ── 控制面能力描述 ───────────────────────────────────────────────
+
+export type SandboxRuntimeCapability = {
+  enabled: boolean
+  platform: 'windows' | 'macos' | 'linux'
+  /** 本平台按优先级可能使用的后端;真正选哪个取决于 WSL 发行版 / Docker daemon 是否就绪 */
+  backends: SandboxMode[]
+  /** 出站白名单代理实际放行的域名(内置 + 用户额外);只有 proxy 型后端(seatbelt/wsl)会用到 */
+  networkAllowlist: string[]
+}
+
+/**
+ * 控制面握手用的沙箱能力描述(remote capabilities)。
+ * 纯函数,不探测 Docker / WSL —— 那些要 spawn 子进程,不该每个 capabilities 请求都跑一遍。
+ */
+export function sandboxRuntimeCapability(input: {
+  platform: NodeJS.Platform
+  sandboxEnabled: boolean
+  extraAllowedHosts: string[]
+}): SandboxRuntimeCapability {
+  const platform: SandboxRuntimeCapability['platform'] =
+    input.platform === 'win32' ? 'windows' : input.platform === 'darwin' ? 'macos' : 'linux'
+  const backends: SandboxMode[] =
+    platform === 'macos'
+      ? ['seatbelt', 'docker']
+      : platform === 'windows'
+        ? ['wsl', 'docker']
+        : ['docker']
+  return {
+    enabled: input.sandboxEnabled,
+    platform,
+    backends,
+    networkAllowlist: mergeAllowedHosts(DEFAULT_ALLOWED_HOSTS, input.extraAllowedHosts),
+  }
+}
+
+/** 从当前配置读出的沙箱能力(给 remote capabilities 用)。读配置失败不该让握手失败。 */
+export function currentSandboxRuntimeCapability(): SandboxRuntimeCapability {
+  try {
+    const settings = loadSettings()
+    return sandboxRuntimeCapability({
+      platform: process.platform,
+      sandboxEnabled: settings.sandboxEnabled === true,
+      extraAllowedHosts: settings.sandboxAllowedHosts ?? [],
+    })
+  } catch (error) {
+    appendAppLog('warn', 'sandbox.capability', 'Failed to read sandbox settings; reporting defaults', normalizeError(error))
+    return sandboxRuntimeCapability({
+      platform: process.platform,
+      sandboxEnabled: false,
+      extraAllowedHosts: [],
+    })
+  }
 }
 
 // ── 注册 ─────────────────────────────────────────────────────────

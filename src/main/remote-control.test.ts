@@ -713,6 +713,13 @@ describe('remote-control command protocol', () => {
             operationProtocols: [1, 2],
             tools: [...TOOL_GATEWAY_MANIFEST.tools],
           },
+          // 沙箱能力描述:平台相关,这里只钉形状(具体后端/名单另有单测)
+          sandbox: expect.objectContaining({
+            enabled: expect.any(Boolean),
+            platform: expect.any(String),
+            backends: expect.any(Array),
+            networkAllowlist: expect.any(Array),
+          }),
         },
       }),
     )

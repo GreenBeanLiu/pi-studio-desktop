@@ -20,6 +20,7 @@ import {
   LOCAL_TOOL_HANDLERS,
   LOCAL_TOOL_PROTOCOL,
 } from './tool-gateway'
+import { currentSandboxRuntimeCapability } from './sandbox'
 import type { ToolReceiptLedger } from './tool-receipts'
 
 /**
@@ -251,6 +252,7 @@ export async function dispatchControllerCommand(
         localFileMaxBytes: LOCAL_FILE_MAX_BYTES,
         toolProtocol: LOCAL_TOOL_PROTOCOL,
         toolGateway: ctx.toolGatewayManifest(),
+        sandbox: currentSandboxRuntimeCapability(),
       })
       break
     case 'prompt':
