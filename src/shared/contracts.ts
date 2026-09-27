@@ -112,6 +112,8 @@ export type SettingsForm = {
   favoriteModels: string
   tavilyApiKey: string
   sandboxEnabled: boolean
+  /** 沙箱出站白名单的额外域名(内置名单之外)。可选:旧端不发送时按空处理。 */
+  sandboxAllowedHosts?: string[]
   subagentsEnabled: boolean
   remoteEnabled: boolean
   feishuWebhookUrl: string
@@ -145,6 +147,7 @@ export function createDefaultSettingsForm(): SettingsForm {
     favoriteModels: '',
     tavilyApiKey: '',
     sandboxEnabled: false,
+    sandboxAllowedHosts: [],
     subagentsEnabled: true,
     remoteEnabled: false,
     feishuWebhookUrl: '',

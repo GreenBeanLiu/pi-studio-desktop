@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { spawn } from 'child_process'
 import { writeFileSync } from 'fs'
 import { join } from 'path'
-import { agentConfigDir } from './settings'
+import { agentConfigDir, loadSettings } from './settings'
 import { startSandboxProxy } from './sandbox-proxy'
 import { appendAppLog } from './app-log'
 
@@ -112,7 +112,7 @@ export async function prepareWslSandboxLaunch(
   const agentWsl = windowsToWslPath(agentConfigDir())
   // mirrored → 127.0.0.1;NAT → WSL 网关 IP(代理绑到该地址,不暴露局域网)
   const proxy = await resolveSandboxProxyHost()
-  const proxyPort = await startSandboxProxy(proxy.host)
+  const proxyPort = await startSandboxProxy(proxy.host, loadSettings().sandboxAllowedHosts)
 
   const shimPath = join(app.getPath('userData'), 'sandbox-wsl-shim.cjs')
   writeFileSync(shimPath, wslShimSource(), 'utf-8')

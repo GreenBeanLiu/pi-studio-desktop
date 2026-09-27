@@ -230,4 +230,20 @@ describe('parseSettingsSave', () => {
     const parsed = parseSettingsSave({ ...base, securityGuardEnabled: true })
     expect('securityGuardEnabled' in parsed).toBe(false)
   })
+
+  it('normalizes and dedupes the sandbox allowlist', () => {
+    const parsed = parseSettingsSave({
+      ...base,
+      sandboxAllowedHosts: ['HTTPS://GitHub.com/x', 'github.com', 'pypi.org.'],
+    })
+    expect(parsed.sandboxAllowedHosts).toEqual(['github.com', 'pypi.org'])
+  })
+
+  it('defaults the sandbox allowlist to empty when absent', () => {
+    expect(parseSettingsSave(base).sandboxAllowedHosts).toEqual([])
+  })
+
+  it('ignores a non-list sandbox allowlist', () => {
+    expect(parseSettingsSave({ ...base, sandboxAllowedHosts: 42 }).sandboxAllowedHosts).toEqual([])
+  })
 })

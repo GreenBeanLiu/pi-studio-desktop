@@ -246,14 +246,14 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 - 临时目录必须放行:node 要用,粘贴图桥(pi-studio-imagegen 扩展)也写在那里;
 - `sandboxAgentPath` 对 seatbelt 是恒等 —— 同一个文件系统,没有命名空间转换;
 - `securitySnapshot` 报 `backend: 'macos-seatbelt'`、`filesystemMode: 'workspace-write'`、
-  **`networkMode: 'unrestricted'`**(只做文件隔离,别报成 allowlist);
+  `networkMode: 'allowlist'`(2026-09-27 起出站也收敛,与 WSL 一致);
 - 标题栏徽标显示「沙箱·仅工作区可写」。
 
 **网络已收敛**(2026-09-27):Seatbelt 现在与 WSL 走同一套白名单代理 —— `buildSeatbeltProfile`
 在给出 `proxyPort` 时加 `(deny network*)` + 只放行 `localhost:<代理端口>`,shim 注入
 `HTTP_PROXY/HTTPS_PROXY`;`prepareSeatbeltSandboxLaunch` 启动 `sandbox-proxy.ts` 后必传该端口。
-代价与 WSL 一致:白名单外的域名一律 403,agent 跑 `git clone github`、`curl` 文档会被拦,
-需要按实际用法补 `sandbox-proxy.ts` 的名单。
+代价与 WSL 一致:白名单外的域名一律 403。内置名单之外需要放行的域名,在 设置 → 安全策略
+的「额外放行域名」里按行填写(`settings.sandboxAllowedHosts`),保存后重启工作区生效。
 
 **验证**(`src/main/sandbox-seatbelt.test.ts`,非 darwin 自动跳过):profile 形状 5 项 +
 真调 `sandbox-exec` 5 项 —— 工作区可写、区外写入被拒且原文件未改、区外删除被拒、
@@ -264,7 +264,8 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 
 1. ~~复用 `sandbox-proxy.ts`,把 `(deny network*)` + `(allow network-outbound (remote ip "localhost:<port>"))`
    加进 `buildSeatbeltProfile`,并给 shim 注入 `HTTPS_PROXY`。~~ 已完成(2026-09-27)。
-2. 先摸清实际需要的域名(github、各类文档站、非 npm 源的包管理器),否则一开就到处 403。
+2. ~~先摸清实际需要的域名(github、各类文档站、非 npm 源的包管理器),否则一开就到处 403。~~
+   已提供设置页「额外放行域名」,用户可自助补名单(2026-09-27)。
 3. 补 E2E:非白名单出站被拦(照 WSL 的验收标准)。
 
 **要不要换成 srt?** [sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime)

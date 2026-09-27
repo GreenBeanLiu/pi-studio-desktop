@@ -1286,7 +1286,7 @@ export default function SettingsModal({
                     {sandboxOnWsl
                       ? 'agent 跑在隔离的 WSL 发行版里:文件只写工作区,出站经主机白名单代理'
                       : sandboxOnSeatbelt
-                        ? 'agent 只能写工作区、agent 目录和临时目录,别处一律拒绝'
+                        ? 'agent 只能写工作区、agent 目录和临时目录;出站经主机白名单代理'
                         : 'agent 跑在 Docker 容器里:只挂载工作区与 agent 目录'}
                   </span>
                 </span>
@@ -1307,11 +1307,27 @@ export default function SettingsModal({
                     sandboxOnWsl
                       ? '发行版就绪即用 WSL 沙箱,否则回退 Docker。'
                       : sandboxOnSeatbelt
-                        ? '用系统自带的 sandbox-exec,无需 Docker。写权限收窄到工作区,网络不受限。'
+                        ? '用系统自带的 sandbox-exec,无需 Docker。写权限收窄到工作区,出站经主机白名单代理。'
                         : '本平台只能走 Docker,需要 daemon 在跑且镜像已构建。这条链路已封存,开启可能导致聊天不可用。'
                   }
                   description="保存后自动重启当前工作区生效;沙箱运行中标题栏有标识。详见 docs/sandbox-mode-plan.md。"
                 />
+                {settings.sandboxEnabled && !sandboxUsesDocker && (
+                  <div className={styles.section}>
+                    <span className={styles.label}>额外放行域名</span>
+                    <Input.TextArea
+                      value={(settings.sandboxAllowedHosts ?? []).join('\n')}
+                      onChange={(e) =>
+                        patch({ sandboxAllowedHosts: e.target.value.split('\n') })
+                      }
+                      autoSize={{ minRows: 2, maxRows: 6 }}
+                      placeholder={'每行一个域名，例如\ngithub.com\npypi.org'}
+                    />
+                    <span className={styles.labelHint}>
+                      出站白名单代理只放行内置名单和这里列出的域名；保存后重启工作区生效。
+                    </span>
+                  </div>
+                )}
                 <div className={styles.actionRow}>
                   <span className={styles.label}>环境</span>
                   <Button size="small" loading={sandboxDetecting} onClick={detectSandbox}>

@@ -17,9 +17,10 @@ describe('sandbox settings copy must match the platform', () => {
     expect(settingsModal).toContain('sandbox-exec')
   })
 
-  it('admits on the seatbelt path that the network is not confined', () => {
-    // 只做文件隔离(2026-08-23 决定)。文案不能让人以为出站也被管了。
-    expect(settingsModal).toContain('网络不受限')
+  it('tells the seatbelt user the network goes through the allowlist proxy', () => {
+    // 2026-09-27:Seatbelt 出站已收敛到主机白名单代理,文案不能再写「网络不受限」
+    expect(settingsModal).toContain('出站经主机白名单代理')
+    expect(settingsModal).not.toContain('网络不受限')
   })
 
   it('keeps the shelved-Docker warning for the platforms that still get Docker', () => {

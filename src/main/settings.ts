@@ -14,6 +14,7 @@ import {
   type SettingsForm,
   type Workspace,
 } from '../shared/contracts'
+import { parseAllowedHostList } from '../shared/sandbox-hosts'
 import {
   migrateDeepSeekFavoriteModels,
 } from '../shared/deepseek-profile'
@@ -117,6 +118,7 @@ export function loadSettings(): SettingsData {
     tavilyApiKey: decryptField(raw, 'tavilyApiKey', 'tavilyApiKeyEncrypted'),
     sandboxEnabled:
       typeof raw.sandboxEnabled === 'boolean' ? raw.sandboxEnabled : DEFAULTS.sandboxEnabled,
+    sandboxAllowedHosts: parseAllowedHostList(raw.sandboxAllowedHosts),
     subagentsEnabled:
       typeof raw.subagentsEnabled === 'boolean' ? raw.subagentsEnabled : DEFAULTS.subagentsEnabled,
     remoteEnabled:
@@ -148,6 +150,7 @@ export function saveSettings(settings: SettingsForm): void {
   raw.favoriteModels = settings.favoriteModels
   delete raw.securityGuardEnabled
   raw.sandboxEnabled = settings.sandboxEnabled
+  raw.sandboxAllowedHosts = settings.sandboxAllowedHosts ?? []
   raw.subagentsEnabled = settings.subagentsEnabled
   raw.remoteEnabled = settings.remoteEnabled
   raw.feishuWebhookUrl = settings.feishuWebhookUrl

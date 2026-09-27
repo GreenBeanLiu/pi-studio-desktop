@@ -7,6 +7,7 @@
  * 沿用 main/ipc-contracts.ts 已有的手写 parser 风格,暂不引入 schema 库。
  */
 import { resolve, sep } from 'path'
+import { parseAllowedHostList } from '../sandbox-hosts'
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -198,6 +199,7 @@ export type ParsedSettingsSave = {
   favoriteModels: string
   tavilyApiKey: string
   sandboxEnabled: boolean
+  sandboxAllowedHosts: string[]
   subagentsEnabled: boolean
   remoteEnabled: boolean
   feishuWebhookUrl: string
@@ -217,6 +219,7 @@ export function parseSettingsSave(value: unknown): ParsedSettingsSave {
     favoriteModels: stringField(value.favoriteModels, '常用模型'),
     tavilyApiKey: stringField(value.tavilyApiKey, 'Tavily Key'),
     sandboxEnabled: boolField(value.sandboxEnabled, false, '沙箱开关'),
+    sandboxAllowedHosts: parseAllowedHostList(value.sandboxAllowedHosts),
     subagentsEnabled: boolField(value.subagentsEnabled, false, '子代理开关'),
     remoteEnabled: boolField(value.remoteEnabled, false, '远程控制开关'),
     feishuWebhookUrl: stringField(value.feishuWebhookUrl, '飞书 Webhook'),

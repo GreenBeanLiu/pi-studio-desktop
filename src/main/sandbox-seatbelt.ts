@@ -3,7 +3,7 @@ import { existsSync, realpathSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { appendAppLog } from './app-log'
-import { agentConfigDir } from './settings'
+import { agentConfigDir, loadSettings } from './settings'
 import { startSandboxProxy } from './sandbox-proxy'
 
 /**
@@ -128,7 +128,7 @@ export async function prepareSeatbeltSandboxLaunch(
   const agentDir = agentConfigDir()
   // 出站强制走主机侧白名单代理,与 WSL 路线同一套策略:LLM 流量从主机进程出网,
   // 沙箱内只放行这一个 localhost 端口;白名单外域名由代理拒绝。
-  const proxyPort = await startSandboxProxy('127.0.0.1')
+  const proxyPort = await startSandboxProxy('127.0.0.1', loadSettings().sandboxAllowedHosts)
   const profile = buildSeatbeltProfile({ workspace: cwd, agentDir, tmpDir: tmpdir(), proxyPort })
   const profilePath = join(app.getPath('userData'), 'sandbox-seatbelt.sb')
   writeFileSync(profilePath, profile, 'utf-8')
