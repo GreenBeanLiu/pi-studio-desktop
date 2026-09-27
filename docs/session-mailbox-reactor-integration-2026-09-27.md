@@ -110,6 +110,10 @@ Desktop 已具备后续接入所需的基础：
 
 1. 对齐 operation id、execution id、session id 和 idempotency key 的含义；
 2. Desktop receipt/result 保留 settled、unknown effect 和重复请求证据；
+   **已落地（2026-09-27）**：`executeToolOperation` 现在按 operationId 幂等——已结算则复用结果
+   （不再产生第二次副作用）、同一 operationId 换参数拒绝（`OPERATION_ID_REUSE`）、处理中重发拒绝
+   （`OPERATION_IN_FLIGHT`）。见 `src/main/remote-command-dispatch.ts` 与 `tool-receipts.ts`
+   （`hashToolArguments`）。这落实了 §6「transport 重试不能产生第二次工具副作用」。
 3. 用跨仓库共享 fixture 做契约测试，先阻止漂移，再考虑共享 package；
 4. 重连或进程重启后不凭 renderer state 伪造成功结果。
 

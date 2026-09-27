@@ -298,6 +298,38 @@ describe('remote-control command protocol', () => {
       expect(ws.lastSent().data).toMatchObject({ state: 'settled', ok: false, code: 'UNSUPPORTED_TOOL' })
     })
 
+    it('replays a settled operation instead of running it a second time', async () => {
+      mocks.bash.mockClear()
+      mocks.bash.mockResolvedValue({ stdout: 'ok', exitCode: 0 })
+      const ws = await connect()
+      const call = {
+        type: 'executeToolOperation', operationId: 'toolop-replay', toolName: 'shell.exec',
+        arguments: { command: 'echo hi' },
+      }
+      ws.receive({ ...call, id: 'p1' })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('p1'))
+      const first = ws.lastSent().data
+      expect(mocks.bash).toHaveBeenCalledTimes(1)
+
+      ws.receive({ ...call, id: 'p2' })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('p2'))
+      expect(mocks.bash).toHaveBeenCalledTimes(1) // 第二次没有副作用
+      expect(ws.lastSent().data).toEqual(first)
+    })
+
+    it('rejects reusing an operationId with different arguments', async () => {
+      mocks.bash.mockClear()
+      mocks.bash.mockResolvedValue({ stdout: 'ok', exitCode: 0 })
+      const ws = await connect()
+      ws.receive({ id: 'x1', type: 'executeToolOperation', operationId: 'toolop-reuse', toolName: 'shell.exec', arguments: { command: 'a' } })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('x1'))
+
+      ws.receive({ id: 'x2', type: 'executeToolOperation', operationId: 'toolop-reuse', toolName: 'shell.exec', arguments: { command: 'b' } })
+      await vi.waitFor(() => expect(ws.lastSent().id).toBe('x2'))
+      expect(ws.lastSent()).toMatchObject({ id: 'x2', code: 'OPERATION_ID_REUSE' })
+      expect(mocks.bash).toHaveBeenCalledTimes(1)
+    })
+
     it('refuses to execute when the dispatch receipt cannot be written', async () => {
       // a directory where the ledger file should be: nothing can be appended, so nothing may run
       remoteControl.setToolReceiptLedger(new ToolReceiptLedger(dir))

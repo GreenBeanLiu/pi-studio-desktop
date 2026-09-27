@@ -21,7 +21,7 @@ import {
   LOCAL_TOOL_PROTOCOL,
 } from './tool-gateway'
 import { currentSandboxRuntimeCapability } from './sandbox'
-import type { ToolReceiptLedger } from './tool-receipts'
+import { hashToolArguments, type ToolReceiptLedger } from './tool-receipts'
 
 /**
  * controller 指令的分发层:把手机(controller)发来的一条命令,翻成对 piClientManager
@@ -265,6 +265,23 @@ export async function dispatchControllerCommand(
       const ledger = operationId ? ctx.receipts : null
       if (ledger) {
         try {
+          const existing = ledger.lookup(operationId)
+          // 幂等:同一 operationId 已结算就复用结果,绝不产生第二次副作用
+          // (transport 重试 / 控制面没收到回包时的重发,都走这条)
+          if (existing.state === 'settled') {
+            if (existing.argumentsSha256 && existing.argumentsSha256 !== hashToolArguments(msg)) {
+              ctx.replyError(msg.id, 'operationId was already used with different arguments', 'OPERATION_ID_REUSE')
+              break
+            }
+            if (existing.ok) ctx.reply(msg.id, { operationId, ok: true, result: existing.result })
+            else ctx.replyError(msg.id, existing.error ?? 'tool operation failed', existing.code)
+            break
+          }
+          // 收到了但还没做完(本进程在处理):不重放,避免并发第二次副作用
+          if (existing.state === 'dispatched') {
+            ctx.replyError(msg.id, 'operation is already in flight on this desktop', 'OPERATION_IN_FLIGHT')
+            break
+          }
           ledger.recordDispatch(msg)
         } catch (error) {
           ctx.replyError(msg.id, `tool receipt ledger is unavailable: ${errMsg(error)}`, 'RECEIPT_UNAVAILABLE')

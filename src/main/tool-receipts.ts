@@ -89,6 +89,12 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+/** 与 recordDispatch 用同一套参数提取与哈希,供幂等重放比对。 */
+export function hashToolArguments(msg: Record<string, unknown>): string {
+  const args = isRecord(msg.arguments) ? msg.arguments : isRecord(msg.args) ? msg.args : {}
+  return sha256(stableJson(args))
+}
+
 /** Relay 上走 camelCase;进契约(docs/contracts/schemas/tool-operation-receipt.schema.json)前转成 snake_case canonical。 */
 export function canonicalToolReceipt(receipt: ToolReceipt): Record<string, unknown> {
   const canonical: Record<string, unknown> = { operation_id: receipt.operationId, state: receipt.state }
@@ -115,8 +121,14 @@ export class ToolReceiptLedger {
     this.loaded = true
     mkdirSync(dirname(this.path), { recursive: true })
     for (const file of [`${this.path}.1`, this.path]) {
-      if (!existsSync(file)) continue
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
+      let content: string
+      try {
+        if (!existsSync(file)) continue
+        content = readFileSync(file, 'utf8')
+      } catch {
+        continue // 读不动(比如路径是个目录)就当这本账空着
+      }
+      for (const line of content.split('\n')) {
         if (!line.trim()) continue
         let record: unknown
         try {
@@ -142,7 +154,6 @@ export class ToolReceiptLedger {
     const operationId = optionalString(msg.operationId ?? msg.operation_id)
     if (!operationId) return
     const audit = isRecord(msg.audit) ? msg.audit : {}
-    const args = isRecord(msg.arguments) ? msg.arguments : isRecord(msg.args) ? msg.args : {}
     this.append({
       kind: 'dispatched',
       operationId,
@@ -152,7 +163,7 @@ export class ToolReceiptLedger {
       subtaskId: optionalString(audit.subtask_id ?? audit.subtaskId),
       principal: optionalString(audit.principal),
       idempotencyKey: optionalString(msg.idempotencyKey ?? msg.idempotency_key),
-      argumentsSha256: sha256(stableJson(args)),
+      argumentsSha256: hashToolArguments(msg),
     })
   }
 

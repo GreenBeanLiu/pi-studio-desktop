@@ -3,7 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { INTERRUPTED_ERROR, RECEIPT_RESULT_MAX_BYTES, ToolReceiptLedger } from './tool-receipts'
+import { INTERRUPTED_ERROR, RECEIPT_RESULT_MAX_BYTES, ToolReceiptLedger, hashToolArguments } from './tool-receipts'
 
 let dir: string
 let path: string
@@ -102,5 +102,17 @@ describe('ToolReceiptLedger', () => {
     const asDir = new ToolReceiptLedger(dir)
     expect(() => asDir.recordDispatch(dispatch('toolop-9'))).toThrow()
     expect(asDir.lookup('toolop-9').state).toBe('unknown')
+  })
+})
+
+describe('hashToolArguments', () => {
+  it('is stable across key order and distinguishes different arguments', () => {
+    // 幂等重放靠它比对:同一份参数(键序不同)必须同哈希,参数变了必须不同
+    expect(hashToolArguments({ arguments: { a: 1, b: 2 } })).toBe(
+      hashToolArguments({ args: { b: 2, a: 1 } }),
+    )
+    expect(hashToolArguments({ arguments: { a: 1 } })).not.toBe(
+      hashToolArguments({ arguments: { a: 2 } }),
+    )
   })
 })
