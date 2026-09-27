@@ -260,6 +260,10 @@ macOS 自带 `/usr/bin/sandbox-exec`,能力与 Linux 的 bwrap 对位。本机�
 系统路径可读,以及**真实 pi CLI 在沙箱里能启动**(Docker 那条正是死在这一步,
 而且从来没人真跑过)。
 
+**WSL 验证**(`src/main/sandbox-wsl.test.ts`,发行版就绪时真跑,否则跳过):`buildWslBwrapArgs`
+形状 2 项 + 真调 `wsl.exe … bwrap` 5 项 —— 工作区可写、区外写入被拒且原文件未改、系统路径可读、
+**只读工作区写入被拒**、**真实 pi CLI 在沙箱里能启动**。
+
 ### 若要进一步收紧,待办
 
 1. ~~复用 `sandbox-proxy.ts`,把 `(deny network*)` + `(allow network-outbound (remote ip "localhost:<port>"))`

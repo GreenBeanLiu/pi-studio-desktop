@@ -105,6 +105,28 @@ child.on('close', (code) => process.exit(code ?? 0))
 `
 }
 
+/**
+ * 组装发行版内 `bwrap` 的参数(纯函数,可单测)。整盘只读 + 工作区/agent 目录可写 +
+ * 私有 /tmp;`workspaceReadOnly` 时不给工作区额外 bind —— 整盘已是 `--ro-bind / /`,天然只读。
+ */
+export function buildWslBwrapArgs(opts: {
+  workspaceWsl: string
+  agentDirWsl: string
+  workspaceReadOnly: boolean
+}): string[] {
+  return [
+    'bwrap',
+    '--ro-bind', '/', '/',
+    '--dev', '/dev',
+    '--proc', '/proc',
+    '--tmpfs', '/tmp',
+    ...(opts.workspaceReadOnly ? [] : ['--bind', opts.workspaceWsl, opts.workspaceWsl]),
+    '--bind', opts.agentDirWsl, opts.agentDirWsl,
+    '--unshare-pid',
+    '--die-with-parent',
+  ]
+}
+
 export async function prepareWslSandboxLaunch(
   cwd: string,
   env: Record<string, string>,
@@ -121,22 +143,17 @@ export async function prepareWslSandboxLaunch(
 
   // bwrap:整盘只读 + 工作区/agent 目录可写 + 私有 /tmp;网络共享发行版 netns
   // (mirrored 模式下 127.0.0.1 即主机),出站由 HTTPS_PROXY 收敛到白名单代理。
-  // 只读工作区:不额外 bind 工作区即可 —— 整盘已经是 --ro-bind / /,天然只读。
   const wslArgs = [
     '-d',
     WSL_SANDBOX_DISTRO,
     '--cd',
     cwd, // wsl.exe 自己会翻译 Windows 路径
     '--',
-    'bwrap',
-    '--ro-bind', '/', '/',
-    '--dev', '/dev',
-    '--proc', '/proc',
-    '--tmpfs', '/tmp',
-    ...(options.workspaceReadOnly ? [] : ['--bind', wsWsl, wsWsl]),
-    '--bind', agentWsl, agentWsl,
-    '--unshare-pid',
-    '--die-with-parent',
+    ...buildWslBwrapArgs({
+      workspaceWsl: wsWsl,
+      agentDirWsl: agentWsl,
+      workspaceReadOnly: options.workspaceReadOnly === true,
+    }),
     'env',
     'HOME=/tmp',
     `PI_CODING_AGENT_DIR=${agentWsl}`,
