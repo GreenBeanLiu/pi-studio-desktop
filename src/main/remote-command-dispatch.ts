@@ -86,9 +86,6 @@ export const SUPPORTED_COMMANDS = [
   'imageGenHealth',
   'imageGenerate',
   'imageGenHistory',
-  'klingVideoHealth',
-  'klingVideoStart',
-  'listVideoJobs',
   'listPendingReviews',
   'respondReview',
   'switchSession',
@@ -98,7 +95,6 @@ export const SUPPORTED_COMMANDS = [
 
 /** hostEvent 会用到的 channel。手机认不出的一律丢掉。 */
 export const HOST_EVENT_CHANNELS = [
-  'video:job',
   'routines:stepProgress',
   'routines:runFinished',
   'routines:reviewRequested',
@@ -173,38 +169,6 @@ export type RemoteImageHost = {
   history: (limit: number) => Promise<ImageGenHistoryItem[] | { error: string }>
 }
 
-/**
- * 可灵文生视频。一次生成 5~20 分钟 —— 不能像生图那样挂一条长请求等着,手机切个后台
- * 或者换个网就断了,结果就丢了。所以发起即返回一个 job,进度和结果走 hostEvent 推;
- * 手机重连后用 list 把还在跑的和刚跑完的补回来。
- */
-export type RemoteVideoJob = {
-  id: string
-  prompt: string
-  duration: number
-  aspectRatio: string
-  mode: string
-  status: 'running' | 'done' | 'error'
-  /** submitting / running / uploading —— 来自云端 SSE */
-  stage?: string
-  videoUrl?: string
-  durationSec?: number | null
-  error?: string
-  createdAt: number
-}
-
-export type RemoteVideoHost = {
-  health: () => Promise<{ ok: boolean; model: string }>
-  list: () => RemoteVideoJob[]
-  /** 立刻返回 job(status=running),真正的生成在后台跑。 */
-  start: (payload: {
-    prompt: string
-    duration?: number
-    aspectRatio?: string
-    mode?: string
-  }) => RemoteVideoJob
-}
-
 /** 同理由 routines.ts 注入:pendingReviews 归它管,反向 import 会成环。 */
 export type RemoteReviewHost = {
   list: () => RoutineReviewRequest[]
@@ -217,7 +181,7 @@ export type RemoteReviewHost = {
 
 /**
  * 分发一条 controller 指令时需要的一切。由 RemoteControlManager 在每条消息到达时组装:
- * reply/replyError 是回帧,receipts/projection 和五个 host 是当前挂着的能力,缺了就用
+ * reply/replyError 是回帧,receipts/projection 和四个 host 是当前挂着的能力,缺了就用
  * 各自的错误信息 fail closed。
  */
 export type RemoteCommandContext = {
@@ -229,7 +193,6 @@ export type RemoteCommandContext = {
   workspaceHost: RemoteWorkspaceHost | null
   routineHost: RemoteRoutineHost | null
   imageHost: RemoteImageHost | null
-  videoHost: RemoteVideoHost | null
   reviewHost: RemoteReviewHost | null
 }
 
@@ -407,30 +370,6 @@ export async function dispatchControllerCommand(
       const inventory = requireHost(ctx.workspaceHost, 'workspace control is unavailable').inventory
       if (!inventory) throw new Error('workspace inventory is unavailable')
       ctx.reply(msg.id, await inventory())
-      break
-    }
-    case 'klingVideoHealth':
-      ctx.reply(msg.id, await requireHost(ctx.videoHost, 'video generation is unavailable').health())
-      break
-    case 'listVideoJobs':
-      ctx.reply(msg.id, requireHost(ctx.videoHost, 'video generation is unavailable').list())
-      break
-    case 'klingVideoStart': {
-      const prompt = String(msg.prompt ?? '').trim()
-      if (!prompt) {
-        ctx.replyError(msg.id, 'prompt is required', 'INVALID_PROMPT')
-        break
-      }
-      // 立刻回 job,不等生成 —— 进度和结果稍后走 video:job 事件推过来
-      ctx.reply(
-        msg.id,
-        requireHost(ctx.videoHost, 'video generation is unavailable').start({
-          prompt,
-          ...(typeof msg.duration === 'number' ? { duration: msg.duration } : {}),
-          ...(typeof msg.aspectRatio === 'string' ? { aspectRatio: msg.aspectRatio } : {}),
-          ...(typeof msg.mode === 'string' ? { mode: msg.mode } : {}),
-        }),
-      )
       break
     }
     case 'imageGenHealth':

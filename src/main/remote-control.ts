@@ -12,7 +12,6 @@ import type {
   RemoteImageHost,
   RemoteReviewHost,
   RemoteRoutineHost,
-  RemoteVideoHost,
   RemoteWorkspaceHost,
 } from './remote-command-dispatch'
 import { RemoteTransport } from './remote-transport'
@@ -30,8 +29,6 @@ export type {
   RemoteRoutineRunSummary,
   RemoteRoutineHost,
   RemoteImageHost,
-  RemoteVideoJob,
-  RemoteVideoHost,
   RemoteReviewHost,
 } from './remote-command-dispatch'
 
@@ -59,7 +56,6 @@ class RemoteControlManager {
   private reviewHost: RemoteReviewHost | null = null
   private routineHost: RemoteRoutineHost | null = null
   private imageHost: RemoteImageHost | null = null
-  private videoHost: RemoteVideoHost | null = null
   private receipts: ToolReceiptLedger | null = null
 
   constructor() {
@@ -101,10 +97,6 @@ class RemoteControlManager {
 
   setImageHost(host: RemoteImageHost): void {
     this.imageHost = host
-  }
-
-  setVideoHost(host: RemoteVideoHost): void {
-    this.videoHost = host
   }
 
   snapshot(): RemoteControlSnapshot {
@@ -175,7 +167,6 @@ class RemoteControlManager {
         workspaceHost: this.workspaceHost,
         routineHost: this.routineHost,
         imageHost: this.imageHost,
-        videoHost: this.videoHost,
         reviewHost: this.reviewHost,
       })
     } catch (err) {

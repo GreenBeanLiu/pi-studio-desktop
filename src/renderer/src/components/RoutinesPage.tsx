@@ -45,7 +45,6 @@ import {
   ShieldCheck,
   FolderSearch,
   AppWindow,
-  Shirt,
   ChevronDown,
 } from 'lucide-react'
 import {
@@ -65,7 +64,7 @@ import {
   type Workspace,
 } from '../lib/api'
 import { createRoutineStepFromPreset, routineNodePresetOptions } from '../lib/routine-node-presets'
-import { dressupVideoWorkflowTemplate, memeWorkflowTemplate } from '../lib/routine-workflow-templates'
+import { memeWorkflowTemplate } from '../lib/routine-workflow-templates'
 import RoutineImageReferencePicker from './RoutineImageReferencePicker'
 
 const DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -97,7 +96,6 @@ const STEP_TYPE_META: Record<RoutineStepType, { label: string; icon: typeof Bot 
   imagegen: { label: '生图', icon: ImageIcon },
   'app-icon': { label: '应用图标', icon: AppWindow },
   model3d: { label: '3D 生成', icon: Box },
-  dressup: { label: '换装视频', icon: Shirt },
   review: { label: '人工审核', icon: ShieldCheck },
   notify: { label: '通知', icon: Bell },
   export: { label: '导出文章', icon: FileText },
@@ -141,7 +139,6 @@ const createStep = (type: RoutineStepType = 'agent'): RoutineStep => ({
   type,
   ...(type === 'imagegen' ? { engine: 'openai' as const, imageRef: '' } : {}),
   ...(type === 'model3d' ? { imageRef: '{{prev.imageUrl}}', provider: 'tripo' as const } : {}),
-  ...(type === 'dressup' ? { personRef: '', garmentRef: '', prompt: '' } : {}),
   ...(type === 'app-icon'
     ? {
         imageRef: '{{prev.imageUrl}}',
@@ -691,9 +688,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
     !!s.name.trim() &&
     (s.type === 'notify'
       ? !!s.channelId
-      : s.type === 'dressup'
-        ? !!s.personRef?.trim() && !!s.garmentRef?.trim()
-        : s.type === 'folder-input' ||
+      : s.type === 'folder-input' ||
             s.type === 'review' ||
             s.type === 'export' ||
             s.type === 'feishu-doc' ||
@@ -758,13 +753,6 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
             ? {
                 imageRef: step.imageRef ?? '{{prev.imageUrl}}',
                 provider: step.provider ?? ('tripo' as const),
-              }
-            : {}),
-          ...(type === 'dressup'
-            ? {
-                personRef: step.personRef ?? '',
-                garmentRef: step.garmentRef ?? '',
-                prompt: step.prompt ?? '',
               }
             : {}),
           ...(type === 'app-icon'
@@ -983,13 +971,11 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
     items: [
       { key: 'article', label: '文章模板' },
       { key: 'app-icon', label: '图标模板' },
-      { key: 'dressup', label: '换装模板' },
       { key: 'meme', label: '表情包模板' },
     ],
     onClick: ({ key }: { key: string }) => {
       if (key === 'article') setForm(articleWorkflowTemplate(workspace?.path ?? '', channels))
       if (key === 'app-icon') setForm(appIconWorkflowTemplate(workspace?.path ?? ''))
-      if (key === 'dressup') setForm(dressupVideoWorkflowTemplate(workspace?.path ?? ''))
       if (key === 'meme') setForm(memeWorkflowTemplate(workspace?.path ?? ''))
     },
   }
@@ -1142,9 +1128,7 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
                               ? '画什么(支持 {{prev.output}} 等变量)'
                               : step.type === 'model3d'
                                 ? '文字描述(有上游图片时可留空 → 走图生 3D)'
-                                : step.type === 'dressup'
-                                  ? '可选：补充试衣与视频动作要求'
-                                  : 'Instruction for this node'
+                                : 'Instruction for this node'
                           }
                           autoSize={{ minRows: 3, maxRows: 8 }}
                         />
@@ -1203,28 +1187,6 @@ export default function RoutinesPage({ workspace }: { workspace: Workspace | nul
                         <span className={styles.hint}>Tripo · 支持文生和图生 3D</span>
                         <span className={styles.hint}>
                           接在「生图」节点后即可图生 3D;glb 存到工作区 .pi-studio/models/
-                        </span>
-                      </>
-                    )}
-                    {step.type === 'dressup' && (
-                      <>
-                        <RoutineImageReferencePicker
-                          label="人物图"
-                          title="选择人物图"
-                          value={step.personRef ?? ''}
-                          placeholder="工作区路径、图片 URL 或 {{prev.imageUrl}}"
-                          onChange={(personRef) => updateStep(step.id, { personRef })}
-                        />
-                        <RoutineImageReferencePicker
-                          label="服装图"
-                          title="选择服装图"
-                          value={step.garmentRef ?? ''}
-                          placeholder="工作区路径、图片 URL 或上游变量"
-                          onChange={(garmentRef) => updateStep(step.id, { garmentRef })}
-                        />
-                        <span className={styles.hint}>
-                          可先在左侧“生图”中批量生成人物或服装，再从生成记录中选择；也可继续填写路径或 URL。 执行 AI
-                          试衣后调用 Kling 生成换装视频，本地 MP4 会作为工作流产物保存。
                         </span>
                       </>
                     )}

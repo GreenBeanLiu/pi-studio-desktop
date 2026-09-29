@@ -97,7 +97,6 @@ const METHODS = {
     'onProgress',
     'onScored',
   ],
-  dressup: ['health', 'generate', 'workflow', 'history', 'historyDelete', 'onProgress'],
   update: ['onAvailable', 'onDownloaded', 'onError', 'install'],
 } as const satisfies MethodList
 

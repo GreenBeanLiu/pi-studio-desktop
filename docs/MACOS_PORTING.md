@@ -20,14 +20,14 @@ Electron 42 + electron-vite 2
 - **核心是「Pi coding agent」客户端**：`@earendil-works/pi-coding-agent` 以 **RPC 子进程**方式运行，
   用的是 **Electron 自身当 Node**（`ELECTRON_RUN_AS_NODE=1`），**不依赖目标机的系统 Node** →
   这条链路**天生跨平台**，Mac 无需改（见 `src/main/pi-client.ts`）。
-- **云端能力**（生图 / 3D / 换装视频 / LLM）都经 **中继** `https://trail-api.glanger.xyz` 转发到
+- **云端能力**（生图 / 3D / LLM）都经 **中继** `https://trail-api.glanger.xyz` 转发到
   自建后端 `pi-studio-device-plane`(2026-09-16 前叫 `pi-studio-backend`)（FastAPI + 自托管 Hatchet worker）。中继地址在**构建期**由
   `electron.vite.config.ts` 的 `__CLOUD_IMAGE_RELAY__` 写入；App Key 存本地**加密配置**，不随构建分发。
   → 后端与中继**同一套，Mac 版直接复用，零改动**。
 - **持久化**：
   - 设置：`electron-store` 风格的 `settings.json`（`app.getPath('userData')/settings.json`，见 `src/main/settings.ts`）。
   - Routines 数据库：**`node:sqlite`（Electron 42 内置，非原生模块）** → **不需要按架构重编**，跨平台直接可用。
-- 功能页：Chat(agent) / Routines / 生图(gpt-image-2) / 3D(Tripo/Hi3D/Blender) / **换装视频(Kling)**。
+- 功能页：Chat(agent) / Routines / 生图(gpt-image-2) / 3D(Tripo/Hi3D/Blender)。换装视频(Kling)2026-09-29 已删。
 
 **没有需要按平台重编的原生 node 插件**（SQLite 用内置的 `node:sqlite`）→ 省掉最大的一块移植麻烦。
 
@@ -275,4 +275,4 @@ pnpm exec electron-builder --mac --publish always
 | Blender | `src/main/blender-setup.ts` |
 | 打包配置 | `package.json` → `build` |
 | IPC 契约/桥 | `src/shared/ipc/contract.ts`、`src/preload/index.ts`、`src/main/ipc.ts` |
-| 换装工作流(参考新功能怎么加) | main `dressup.ts` / renderer `DressupPage.tsx`（见 `pi-studio-device-plane`） |
+| 云端中继功能(参考新功能怎么加) | main `image-gen.ts` / `model3d.ts`（见 `pi-studio-device-plane`）;原来的换装 `dressup.ts` 2026-09-29 已删 |

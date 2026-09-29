@@ -50,9 +50,6 @@ export type RoutineStep = {
   backgroundColor?: string
   /** app-icon:同一个工作流最多保留几次生成;留空或 <=0 就一直堆着 */
   keepHistory?: number
-  /** dressup:人物图与服装图，支持模板、工作区相对路径、data URL 或公网 URL */
-  personRef?: string
-  garmentRef?: string
 }
 
 /** 每个节点跑完后的产物,供后续节点用 {{…}} 引用 */
@@ -86,8 +83,6 @@ export function routineStepSchema<K extends RoutineStepType>(type: K): { parse: 
         'imageRef',
         'appName',
         'backgroundColor',
-        'personRef',
-        'garmentRef',
       ]
       const typedOptionalsValid = optionalStrings.every(
         (key) => step[key] === undefined || typeof step[key] === 'string',

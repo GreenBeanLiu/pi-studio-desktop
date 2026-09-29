@@ -56,8 +56,6 @@ export function normalizeStep(step: Partial<RoutineStep>): RoutineStep {
     ...(typeof step.appName === 'string' ? { appName: step.appName } : {}),
     ...(platforms !== undefined ? { platforms } : {}),
     ...(typeof step.backgroundColor === 'string' ? { backgroundColor: step.backgroundColor } : {}),
-    ...(typeof step.personRef === 'string' ? { personRef: step.personRef } : {}),
-    ...(typeof step.garmentRef === 'string' ? { garmentRef: step.garmentRef } : {}),
   }
 }
 

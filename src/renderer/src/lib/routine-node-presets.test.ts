@@ -10,12 +10,13 @@ describe('routine node presets', () => {
         'article.draft',
         'article.approval',
         'media.app-icon-master',
-        'media.dressup-video',
         'output.wechat-html',
         'output.wechat-draft',
         'output.app-icon-bundle',
       ]),
     )
+    // 换装视频(可灵)2026-09-29 删了,节点库里不该再出现
+    expect(ROUTINE_NODE_PRESETS.map((preset) => preset.id)).not.toContain('media.dressup-video')
   })
 
   it('ships a canvas with the image presets instead of hiding it in prose', () => {
@@ -27,14 +28,6 @@ describe('routine node presets', () => {
     expect(createRoutineStepFromPreset('media.app-icon-master')).toMatchObject({
       type: 'imagegen',
       size: '1024x1024',
-    })
-  })
-
-  it('creates a dressup workflow node with independent person and garment inputs', () => {
-    expect(createRoutineStepFromPreset('media.dressup-video')).toMatchObject({
-      type: 'dressup',
-      personRef: '',
-      garmentRef: '',
     })
   })
 

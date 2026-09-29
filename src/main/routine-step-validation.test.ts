@@ -14,18 +14,6 @@ describe('routine step validation', () => {
     expect(isRoutineStepComplete({ name: '本地素材', type: 'folder-input' })).toBe(true)
   })
 
-  it('keeps a configured dressup video workflow node', () => {
-    expect(
-      isRoutineStepComplete({
-        name: '换装视频',
-        type: 'dressup',
-        personRef: 'assets/person.png',
-        garmentRef: 'assets/garment.png',
-      }),
-    ).toBe(true)
-    expect(isRoutineStepComplete({ name: '换装视频', type: 'dressup' })).toBe(false)
-  })
-
   it('still requires prompts and notification channels for their respective nodes', () => {
     expect(isRoutineStepComplete({ name: '写正文', type: 'agent' })).toBe(false)
     expect(isRoutineStepComplete({ name: '发送通知', type: 'notify' })).toBe(false)

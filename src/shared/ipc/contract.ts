@@ -273,28 +273,6 @@ export type DesktopApi = {
     ) => () => void
     onScored: (cb: (data: { id: string; fidelity: Model3DFidelity }) => void) => () => void
   }
-  dressup: {
-    health: () => Promise<DressupHealth>
-    generate: (payload: {
-      firstFrameDataUrl: string
-      tailFrameDataUrl: string
-      prompt?: string
-      mode?: 'std' | 'pro'
-      duration?: '5' | '10'
-      model?: string
-    }) => Promise<DressupHistoryItem | { error: string }>
-    // AI 试衣工作流:人物 + 衣服 → gpt-image-2 试衣 → Kling 换装视频。
-    // firstFrameDataUrl 由渲染进程用 canvas 合成(人物 + 左上角衣服)。
-    workflow: (payload: {
-      personDataUrl: string
-      garmentDataUrl: string
-      firstFrameDataUrl: string
-      prompt?: string
-    }) => Promise<DressupHistoryItem | { error: string }>
-    history: () => Promise<DressupHistoryItem[]>
-    historyDelete: (id: string) => Promise<{ ok: boolean }>
-    onProgress: (cb: (data: { id: string; status: string; progress: number; prompt?: string }) => void) => () => void
-  }
   update: {
     onAvailable: (cb: (data: { version: string }) => void) => () => void
     onDownloaded: (cb: (data: { version: string }) => void) => () => void
@@ -355,22 +333,6 @@ export type Model3DOptions = {
 
 export type Model3DFidelity = { score: number; notes: string; model: string }
 
-export type DressupHealth = {
-  configured: boolean
-  /** 服务端 Kling 密钥是否就绪;探测失败时缺失 */
-  klingReady?: boolean
-}
-
-export type DressupHistoryItem = {
-  id: string
-  prompt: string
-  mode: 'std' | 'pro'
-  duration: '5' | '10'
-  videoUrl: string
-  cloudVideoUrl?: string
-  createdAt: number
-}
-
 export type Model3DHistoryItem = {
   id: string
   prompt: string
@@ -425,7 +387,6 @@ export type RoutineStepType =
   | 'imagegen'
   | 'app-icon'
   | 'model3d'
-  | 'dressup'
   | 'review'
   | 'notify'
   | 'export'
@@ -456,8 +417,6 @@ export type RoutineStep = {
   backgroundColor?: string
   /** app-icon:同一个工作流最多保留几次生成;留空或 <=0 就一直堆着 */
   keepHistory?: number
-  personRef?: string
-  garmentRef?: string
 }
 
 export type Routine = {

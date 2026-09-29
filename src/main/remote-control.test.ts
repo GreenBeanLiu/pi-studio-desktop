@@ -775,11 +775,6 @@ describe('remote-control command protocol', () => {
       generate: async () => ({ urls: [] }),
       history: async () => [],
     })
-    remoteControl.setVideoHost({
-      health: async () => ({ ok: true, model: 'kling-v1' }),
-      list: () => [],
-      start: vi.fn(),
-    })
     const ws = await connect()
 
     for (const [index, command] of SUPPORTED_COMMANDS.entries()) {
@@ -858,57 +853,18 @@ describe('remote-control command protocol', () => {
     )
   })
 
-  // 视频一次要跑 5~20 分钟。挂一条长请求等着的话,手机切后台或换网就断了、结果就丢了,
-  // 所以发起必须立刻返回,进度和结果走 video:job 事件。
-  it('returns a video job immediately instead of holding the request', async () => {
-    const job = {
-      id: 'v1',
-      prompt: '一只橘猫趴在窗台上',
-      duration: 5,
-      aspectRatio: '16:9',
-      mode: 'std',
-      status: 'running' as const,
-      stage: 'submitting',
-      createdAt: 1,
+  // 2026-09-29 可灵视频整条删了(没有 key)。旧手机还可能发这三条,要明确回「不认识」,
+  // 别让它挂着等一个永远不会来的 video:job。
+  it('answers the removed kling video commands as unknown', async () => {
+    const ws = await connect()
+
+    for (const [index, type] of ['klingVideoHealth', 'klingVideoStart', 'listVideoJobs'].entries()) {
+      ws.receive({ id: 90 + index, type, prompt: '一只橘猫趴在窗台上' })
+      await vi.waitFor(() =>
+        expect(ws.lastSent()).toMatchObject({ type: 'result', id: 90 + index, code: 'UNKNOWN_COMMAND' }),
+      )
     }
-    const start = vi.fn().mockReturnValue(job)
-    remoteControl.setVideoHost({
-      health: async () => ({ ok: true, model: 'kling-v1' }),
-      list: () => [job],
-      start,
-    })
-    const ws = await connect()
-
-    ws.receive({ id: 90, type: 'klingVideoStart', prompt: '一只橘猫趴在窗台上', duration: 5 })
-
-    await vi.waitFor(() =>
-      expect(start).toHaveBeenCalledWith(expect.objectContaining({ prompt: '一只橘猫趴在窗台上', duration: 5 })),
-    )
-    expect(ws.lastSent()).toEqual({ type: 'result', id: 90, data: job })
-
-    // 重连后要能把还在跑的补回来 —— 事件是一次性的,断线期间推的那些收不到
-    ws.receive({ id: 91, type: 'listVideoJobs' })
-    await vi.waitFor(() => expect(ws.lastSent()).toEqual({ type: 'result', id: 91, data: [job] }))
-  })
-
-  it('rejects a video request with no prompt', async () => {
-    remoteControl.setVideoHost({
-      health: async () => ({ ok: true, model: 'kling-v1' }),
-      list: () => [],
-      start: vi.fn(),
-    })
-    const ws = await connect()
-
-    ws.receive({ id: 92, type: 'klingVideoStart', prompt: '   ' })
-
-    await vi.waitFor(() =>
-      expect(ws.lastSent()).toEqual({
-        type: 'result',
-        id: 92,
-        error: 'prompt is required',
-        code: 'INVALID_PROMPT',
-      }),
-    )
+    expect(SUPPORTED_COMMANDS).not.toContain('klingVideoStart')
   })
 
   it('gives the phone a routine list, a manual run and an on/off switch', async () => {

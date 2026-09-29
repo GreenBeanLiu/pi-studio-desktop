@@ -11,7 +11,6 @@ import { prepareReviewedWorkspaceMemoryExtension } from './workspace-memory'
 import { generateImage } from './image-gen'
 import { cloud3dGenerate } from './model3d'
 import { formatAppIconWarning, generateAppIconBundle } from './app-icon-bundle'
-import { runDressupWorkflow } from './dressup'
 import { sendToChannel, createFeishuDoc, createWechatDraft, type Channel } from './channels'
 import { appendAppLog } from './app-log'
 import { latestAssistantFailure, latestAssistantText, type AgentMessage } from './agent-message'
@@ -388,37 +387,6 @@ async function routineImageDataUrl(workspacePath: string, reference: string, sig
   return `data:${mime};base64,${bytes.toString('base64')}`
 }
 
-async function runDressupStep(
-  routine: Routine,
-  step: RoutineStep,
-  ctx: RunContext,
-  signal: AbortSignal,
-): Promise<StepProduct> {
-  const personRef = interpolate(step.personRef ?? '', ctx).trim()
-  const garmentRef = interpolate(step.garmentRef ?? '', ctx).trim()
-  if (!personRef || !garmentRef || personRef.includes('{{') || garmentRef.includes('{{')) {
-    throw new Error('换装视频节点需要人物图和服装图')
-  }
-  const [personDataUrl, garmentDataUrl] = await Promise.all([
-    routineImageDataUrl(routine.workspacePath, personRef, signal),
-    routineImageDataUrl(routine.workspacePath, garmentRef, signal),
-  ])
-  const result = await runDressupWorkflow(
-    {
-      personDataUrl,
-      garmentDataUrl,
-      firstFrameDataUrl: personDataUrl,
-      prompt: interpolate(step.prompt ?? '', ctx).trim() || undefined,
-    },
-    signal,
-  )
-  if ('error' in result) throw new Error(result.error)
-  return {
-    output: result.cloudVideoUrl ?? result.filePath ?? result.videoUrl,
-    ...(result.filePath ? { artifactPath: result.filePath } : {}),
-  }
-}
-
 async function runReviewStep(
   routine: Routine,
   step: RoutineStep,
@@ -598,12 +566,6 @@ export function createRoutineNodeRegistry(
       ...routineNodeSchemas('model3d'),
       presentation: { label: '生成 3D', kind: 'transform' },
       execute: (step, context) => runModel3dStep(step, runContext, context.signal),
-    })
-    .register({
-      type: 'dressup',
-      ...routineNodeSchemas('dressup'),
-      presentation: { label: '换装视频', kind: 'transform' },
-      execute: (step, context) => runDressupStep(routine, step, runContext, context.signal),
     })
     .register({
       type: 'notify',

@@ -102,19 +102,6 @@ export const ROUTINE_NODE_PRESETS: RoutineNodePreset[] = [
     },
   },
   {
-    id: 'media.dressup-video',
-    category: 'media',
-    label: '换装视频',
-    description: '人物图 + 服装图 → AI 试衣 → Kling 视频',
-    step: {
-      name: '换装视频',
-      type: 'dressup',
-      personRef: '',
-      garmentRef: '',
-      prompt: '',
-    },
-  },
-  {
     id: 'output.wechat-html',
     category: 'output',
     label: '导出公众号 HTML',

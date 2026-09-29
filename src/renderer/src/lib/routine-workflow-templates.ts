@@ -28,25 +28,6 @@ const MANUAL_WORKFLOW_DEFAULTS = {
   pushEachStep: false,
 }
 
-export function dressupVideoWorkflowTemplate(workspacePath: string): RoutineWorkflowTemplate {
-  return {
-    name: 'AI 换装视频',
-    input: '选择人物图和服装图，可补充想要的试衣效果与视频动作。',
-    workspacePath,
-    ...MANUAL_WORKFLOW_DEFAULTS,
-    steps: [
-      {
-        id: templateStepId(),
-        name: 'AI 试衣换装视频',
-        type: 'dressup',
-        personRef: '',
-        garmentRef: '',
-        prompt: '保持人物长相、发型、体型、姿势和背景不变，自然穿上指定服装，生成真实流畅的换装展示视频。',
-      },
-    ],
-  }
-}
-
 export function memeWorkflowTemplate(workspacePath: string): RoutineWorkflowTemplate {
   return {
     name: '表情包生成',

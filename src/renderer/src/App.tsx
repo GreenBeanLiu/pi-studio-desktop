@@ -7,7 +7,6 @@ import ChatPane from './components/ChatPane'
 import RoutinesPage from './components/RoutinesPage'
 import ImageGenPage from './components/ImageGenPage'
 import Model3DPage from './components/Model3DPage'
-import VideoGenPage from './components/VideoGenPage'
 import SessionSidebar from './components/SessionSidebar'
 import { useAppShortcuts } from './keyboard/use-app-shortcuts'
 import DesktopLayoutContainer from './components/DesktopLayoutContainer'
@@ -29,7 +28,7 @@ type UpdateState =
   | { status: 'error'; message: string }
 
 type AgentIssue = Exclude<AgentStatusEvent, { status: 'started' }>
-type ActiveView = 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video'
+type ActiveView = 'chat' | 'routines' | 'imagegen' | 'model3d'
 
 const useStyles = createStyles(({ token, css }) => ({
   shell: css`
@@ -286,7 +285,6 @@ export default function App({ appearance, onToggleTheme }: AppProps) {
           onRoutines={() => setActiveView('routines')}
           onImageGen={() => setActiveView('imagegen')}
           onModel3D={() => setActiveView('model3d')}
-          onVideo={() => setActiveView('video')}
           onSettings={() => setShowSettings(true)}
           onToggleTheme={onToggleTheme}
         />
@@ -321,7 +319,6 @@ export default function App({ appearance, onToggleTheme }: AppProps) {
           {activeView === 'routines' && <RoutinesPage workspace={workspace} />}
           {activeView === 'imagegen' && <ImageGenPage />}
           {activeView === 'model3d' && <Model3DPage />}
-          {activeView === 'video' && <VideoGenPage />}
         </DesktopLayoutContainer>
       </div>
 

@@ -44,8 +44,6 @@ function stepPayload(workflowId: string, step: RoutineStep): Record<string, unkn
       ...(step.appName ? { app_name: step.appName } : {}),
       ...(step.platforms ? { platforms: step.platforms } : {}),
       ...(step.backgroundColor ? { background_color: step.backgroundColor } : {}),
-      ...(step.personRef ? { person_ref: step.personRef } : {}),
-      ...(step.garmentRef ? { garment_ref: step.garmentRef } : {}),
     },
   }
 }

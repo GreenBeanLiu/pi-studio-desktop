@@ -78,32 +78,6 @@ describe('routine cloud payloads', () => {
     })
   })
 
-  it('stores dressup image references in the cloud step config', () => {
-    const dressupRoutine: Routine = {
-      ...routine,
-      steps: [
-        {
-          id: 'dressup-step',
-          name: '换装视频',
-          type: 'dressup',
-          personRef: 'assets/person.png',
-          garmentRef: 'assets/garment.png',
-        },
-      ],
-    }
-    expect(routineWorkflowPayload(dressupRoutine)).toMatchObject({
-      steps: [
-        {
-          type: 'dressup',
-          config: {
-            person_ref: 'assets/person.png',
-            garment_ref: 'assets/garment.png',
-          },
-        },
-      ],
-    })
-  })
-
   // 2026-08-03:解除配对后重新配对留下 3 条归属旧账号的 workflow,第一条 403 就
   // 抛出中断整份快照 —— 例程和运行记录的同步整整坏了一天,每 5 分钟重试一次同样的 403。
   it('treats an ownership rejection as permanent and everything else as retryable', () => {
