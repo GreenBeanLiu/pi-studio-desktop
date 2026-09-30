@@ -5,6 +5,8 @@ import { join } from 'path'
 
 const mocks = vi.hoisted(() => ({
   prompt: vi.fn(),
+  startTask: vi.fn(),
+  cancelTask: vi.fn(),
   steer: vi.fn(),
   followUp: vi.fn(),
   abort: vi.fn(),
@@ -23,8 +25,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./pi-client', () => ({
   NO_WORKSPACE_ERROR: 'No workspace is open',
+  TASK_AGENTS: ['pi', 'claude-acp', 'codex-acp'],
   piClientManager: {
     prompt: mocks.prompt,
+    startTask: mocks.startTask,
+    cancelTask: mocks.cancelTask,
     steer: mocks.steer,
     followUp: mocks.followUp,
     abort: mocks.abort,
@@ -727,6 +732,37 @@ describe('remote-control command protocol', () => {
     })
   })
 
+  // 控制面的任务:每个任务一个后台会话、指定 agent;立刻回 accepted,跑完以 task:event 的 agent_settled 为准。
+  it('starts a task session with the requested agent and permission mode', async () => {
+    mocks.startTask.mockResolvedValue({ sessionId: 'sess-9', agent: 'codex-acp' })
+    const ws = await connect()
+
+    ws.receive({ id: 'st', type: 'startTask', taskId: 'task-1', agent: 'codex-acp', prompt: ' 修一下构建 ', permissionMode: 'read-only' })
+
+    await vi.waitFor(() => expect(ws.lastSent()).toEqual({ type: 'result', id: 'st', data: { sessionId: 'sess-9', agent: 'codex-acp' } }))
+    expect(mocks.startTask).toHaveBeenCalledWith({ taskId: 'task-1', agent: 'codex-acp', prompt: '修一下构建', permissionMode: 'read-only' })
+  })
+
+  it('refuses a task without a prompt or with an agent it does not know', async () => {
+    const ws = await connect()
+
+    ws.receive({ id: 'a', type: 'startTask', taskId: 'task-1', prompt: '  ' })
+    await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({ id: 'a', code: 'INVALID_TASK' }))
+    ws.receive({ id: 'b', type: 'startTask', taskId: 'task-1', prompt: 'x', agent: 'gemini-cli' })
+    await vi.waitFor(() => expect(ws.lastSent()).toMatchObject({ id: 'b', code: 'UNKNOWN_AGENT' }))
+    expect(mocks.startTask).not.toHaveBeenCalled()
+  })
+
+  it('cancels a task session by task id', async () => {
+    mocks.cancelTask.mockResolvedValue(true)
+    const ws = await connect()
+
+    ws.receive({ id: 'c', type: 'cancelTask', taskId: 'task-1' })
+
+    await vi.waitFor(() => expect(ws.lastSent()).toEqual({ type: 'result', id: 'c', data: { cancelled: true } }))
+    expect(mocks.cancelTask).toHaveBeenCalledWith('task-1')
+  })
+
   it('advertises the commands it supports', async () => {
     const ws = await connect()
 
@@ -745,6 +781,7 @@ describe('remote-control command protocol', () => {
             operationProtocols: [1, 2],
             tools: [...TOOL_GATEWAY_MANIFEST.tools],
           },
+          taskSessions: { version: 1, agents: ['pi', 'claude-acp', 'codex-acp'] },
           // 沙箱能力描述:平台相关,这里只钉形状(具体后端/名单另有单测)
           sandbox: expect.objectContaining({
             enabled: expect.any(Boolean),

@@ -26,6 +26,7 @@ import {
   mergeModelEntries,
 } from './acp-model-entries'
 import { EventProjection, type EventProjectionHost } from './pi-event-projection'
+import { UnattendedApprovalGate } from './approval-gateway'
 import {
   entryContext,
   unsupportedByBackend,
@@ -56,6 +57,23 @@ export {
 export type StartWorkspaceOptions = {
   subagentsAvailable?: boolean
 }
+
+/**
+ * 控制面任务能指定的 agent。pi 是自家的;另外两个经 ACP 接进来,id 和模型菜单里的一致。
+ * 远程 `capabilities` 把这张表报给控制面,它据此决定能不能走 startTask。
+ */
+export const TASK_AGENTS = ['pi', 'claude-acp', 'codex-acp'] as const
+export type TaskAgent = (typeof TASK_AGENTS)[number]
+
+export type StartTaskRequest = {
+  taskId: string
+  agent: TaskAgent
+  prompt: string
+  /** 外部 agent 的权限档(比如 Claude 的 plan / acceptEdits、Codex 的 read-only / agent);pi 不接受。 */
+  permissionMode?: string
+}
+
+export type TaskEventListener = (taskId: string, event: PiRuntimeEvent, context: PiEventContext) => void
 export type {
   AgentStatusEvent,
   AgentStatusListener,
@@ -80,6 +98,9 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
   private onStatus: AgentStatusListener | null = null
   private onActivity: SessionActivityListener | null = null
   private onActivated: SessionActivatedListener | null = null
+  private onTaskEvent: TaskEventListener | null = null
+  /** 进行中的控制面任务会话,按 taskId 找(取消要用)。收掉就删。 */
+  private readonly tasks = new Map<string, AgentEntry>()
   private readonly pool = new AgentPool(this)
   private readonly projection = new EventProjection(this)
   private readonly acpRegistry = new AcpRegistry()
@@ -117,6 +138,76 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
 
   onEntryRemoved(entry: AgentEntry): void {
     if (this.active === entry) this.active = null
+    if (entry.task && this.tasks.get(entry.task.taskId) === entry) this.tasks.delete(entry.task.taskId)
+  }
+
+  emitTaskEvent(entry: AgentEntry, event: PiRuntimeEvent): void {
+    const task = entry.task
+    if (!task) return
+    this.onTaskEvent?.(task.taskId, event, entryContext(entry))
+    // 一轮真正结束(agent_settled)就收掉进程:会话记录已经落盘,侧栏里还能打开看。
+    if (event.type === 'agent_settled') {
+      this.tasks.delete(task.taskId)
+      void this.pool.stopEntry(entry, 'task settled').catch((err) => {
+        appendAppLog('warn', 'task.session', 'Failed to stop a settled task session', {
+          taskId: task.taskId,
+          error: normalizeError(err),
+        })
+      })
+    }
+  }
+
+  setTaskEventListener(listener: TaskEventListener | null): void {
+    this.onTaskEvent = listener
+  }
+
+  /**
+   * 控制面派来的任务:另起一个后台会话跑,不碰你正在看的那个。
+   *
+   * 以前控制面直接发 `prompt`,落进桌面当前打开的会话 —— 你正选着 Codex 就被 Codex 跑,
+   * 任务的对话还插进你正在聊的那段。现在每个任务一个会话,agent 由任务指定,
+   * 事件经 emitTaskEvent 按 taskId 推给控制面,审批由无人值守闸门处理(见 TaskBinding)。
+   */
+  async startTask(request: StartTaskRequest): Promise<{ sessionId: string; agent: TaskAgent }> {
+    if (!this.pool.launchContext()) throw new Error(NO_WORKSPACE_ERROR)
+    if (!TASK_AGENTS.includes(request.agent)) throw new Error(`不认识的 agent:${request.agent}`)
+    if (this.tasks.has(request.taskId)) throw new Error(`任务 ${request.taskId} 已经在跑了`)
+    if (request.agent === 'pi' && request.permissionMode) {
+      throw new Error('pi 会话没有权限档可切(它的权限靠沙箱)')
+    }
+    const entry = request.agent === 'pi' ? await this.pool.spawn(null) : await this.spawnAcpEntry(request.agent)
+    // 在发 prompt 之前挂上:从第一条事件起就按任务处理
+    entry.task = { taskId: request.taskId, gate: new UnattendedApprovalGate() }
+    this.tasks.set(request.taskId, entry)
+    try {
+      if (request.permissionMode) {
+        const set = entry.client.setPermissionMode
+        if (!set) throw unsupportedByBackend(entry, '切换权限模式')
+        await set.call(entry.client, request.permissionMode)
+      }
+      entry.firstMessage ??= request.prompt
+      await entry.client.send(request.prompt)
+    } catch (err) {
+      this.tasks.delete(request.taskId)
+      await this.pool.stopEntry(entry, 'task failed to start').catch(() => {})
+      throw err
+    }
+    appendAppLog('info', 'task.session', 'Started a control-plane task session', {
+      taskId: request.taskId,
+      agent: request.agent,
+      sessionId: entry.sessionId,
+    })
+    return { sessionId: entry.sessionId ?? entry.job.id, agent: request.agent }
+  }
+
+  /** 取消一个任务会话:先让 agent 停下这一轮,再收掉进程。没有这个任务就返回 false。 */
+  async cancelTask(taskId: string): Promise<boolean> {
+    const entry = this.tasks.get(taskId)
+    if (!entry) return false
+    this.tasks.delete(taskId)
+    await entry.client.cancel('task cancelled').catch(() => {})
+    await this.pool.stopEntry(entry, 'task cancelled')
+    return true
   }
 
   emitEvent(event: PiRuntimeEvent, context: PiEventContext): void {
@@ -578,6 +669,13 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
   }
 
   private async startAcpSession(agentId: string): Promise<{ provider: string; id: string }> {
+    const entry = await this.spawnAcpEntry(agentId)
+    this.activate(entry)
+    return { provider: ACP_MODEL_PROVIDER, id: agentId }
+  }
+
+  /** 起一个外部 agent 会话并记进会话索引,但不切到前台(任务会话就这样用)。 */
+  private async spawnAcpEntry(agentId: string): Promise<AgentEntry> {
     if (!this.pool.launchContext()) throw new Error(NO_WORKSPACE_ERROR)
     const agents = await this.acpRegistry.load()
     const agent = agents.find((candidate) => candidate.id === agentId)
@@ -595,14 +693,13 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
       createdAt: nowIso,
       modified: nowIso,
     })
-    this.activate(entry)
     appendAppLog('info', 'acp.session', 'Started an ACP-backed session', {
       cwd: this.workspacePath,
       agentId,
       command: resolved.spec.command,
       sessionId: entry.sessionId,
     })
-    return { provider: ACP_MODEL_PROVIDER, id: agentId }
+    return entry
   }
 
   setThinkingLevel(level: Parameters<RpcClient['setThinkingLevel']>[0]): ReturnType<RpcClient['setThinkingLevel']> {

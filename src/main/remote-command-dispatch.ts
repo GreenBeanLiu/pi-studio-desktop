@@ -1,5 +1,5 @@
 import { dirname } from 'path'
-import { piClientManager } from './pi-client'
+import { piClientManager, TASK_AGENTS, type TaskAgent } from './pi-client'
 import { listSessions } from './pi-sessions'
 import { appendAppLog, normalizeError } from './app-log'
 import { ModelCatalogCoordinator } from './model-catalog'
@@ -91,10 +91,13 @@ export const SUPPORTED_COMMANDS = [
   'switchSession',
   'renameSession',
   'listSessions',
+  'startTask',
+  'cancelTask',
 ] as const
 
 /** hostEvent 会用到的 channel。手机认不出的一律丢掉。 */
 export const HOST_EVENT_CHANNELS = [
+  'task:event',
   'routines:stepProgress',
   'routines:runFinished',
   'routines:reviewRequested',
@@ -216,7 +219,30 @@ export async function dispatchControllerCommand(
         toolProtocol: LOCAL_TOOL_PROTOCOL,
         toolGateway: ctx.toolGatewayManifest(),
         sandbox: currentSandboxRuntimeCapability(),
+        // 控制面据此决定走 startTask(每个任务一个后台会话、指定 agent)还是老的 prompt
+        taskSessions: { version: 1, agents: [...TASK_AGENTS] },
       })
+      break
+    // 控制面的任务:另起一个后台会话,事件经 hostEvent `task:event` 按 taskId 推回去。
+    // 立刻回 accepted,不等跑完 —— 跑完以 agent_settled 事件为准。
+    case 'startTask': {
+      const taskId = String(msg.taskId ?? '').trim()
+      const prompt = String(msg.prompt ?? '').trim()
+      const agent = String(msg.agent ?? 'pi') as TaskAgent
+      if (!taskId || !prompt) {
+        ctx.replyError(msg.id, 'taskId and prompt are required', 'INVALID_TASK')
+        break
+      }
+      if (!TASK_AGENTS.includes(agent)) {
+        ctx.replyError(msg.id, `unknown agent: ${agent}`, 'UNKNOWN_AGENT')
+        break
+      }
+      const permissionMode = typeof msg.permissionMode === 'string' && msg.permissionMode ? msg.permissionMode : undefined
+      ctx.reply(msg.id, await piClientManager.startTask({ taskId, agent, prompt, permissionMode }))
+      break
+    }
+    case 'cancelTask':
+      ctx.reply(msg.id, { cancelled: await piClientManager.cancelTask(String(msg.taskId ?? '')) })
       break
     case 'prompt':
       await piClientManager.prompt(String(msg.text ?? ''), msg.images as ImageContent[] | undefined)

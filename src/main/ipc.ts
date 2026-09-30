@@ -98,6 +98,10 @@ remoteControl.setProjectionProvider({
   snapshot: () => sessionProjection.snapshot(),
   changes: (sessionId, afterSeq) => sessionProjection.changes(sessionId, afterSeq),
 })
+// 控制面任务会话的事件走 hostEvent(手机认不出这个频道会丢掉),不进聊天的 event 流
+piClientManager.setTaskEventListener((taskId, event, context) => {
+  remoteControl.forwardHostEvent('task:event', { taskId, sessionId: context.sessionId, event })
+})
 
 function broadcastSessionProjection(): void {
   const snapshot = sessionProjection.wireSnapshot()

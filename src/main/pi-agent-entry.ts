@@ -12,6 +12,7 @@ import type {
 import type { PiAgentRunHandle } from './pi-runtime'
 import type { BlockingExtensionUiMethod } from './extension-ui-ownership'
 import type { AgentJob } from './agent-job-registry'
+import type { UnattendedApprovalGate } from './approval-gateway'
 import type { AgentStatusTracker } from './agent-status'
 import type { AgentLoopGuard } from './agent-loop-guard'
 
@@ -138,7 +139,21 @@ export function pickEvictableAgent<T extends EvictionCandidate>(
   )
 }
 
+/**
+ * 控制面派来的任务会话(远程指令 startTask)。
+ *
+ * 它在后台跑,不占你正在看的那个会话:事件按 taskId 经 hostEvent 推给控制面,
+ * 不进界面的聊天流;没人坐在旁边,阻塞式的审批请求由无人值守闸门当场拒绝并留下记录,
+ * 而不是像普通后台会话那样攒着等切到前台(那样任务会卡死)。
+ */
+export type TaskBinding = {
+  taskId: string
+  gate: UnattendedApprovalGate
+}
+
 export type AgentEntry = {
+  /** 控制面任务会话才有;用户自己开的会话是 undefined。 */
+  task?: TaskBinding
   /** 后端的共同面。进程层和投影层只用这个。 */
   client: AgentBackend
   /** pi 独有的能力面;ACP 会话是 null。 */

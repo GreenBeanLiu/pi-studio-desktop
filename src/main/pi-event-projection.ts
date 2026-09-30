@@ -8,6 +8,7 @@ import {
   nextRunActive,
   type AgentEntry,
   type PiEventContext,
+  type TaskBinding,
   type SessionActivityEvent,
 } from './pi-agent-entry'
 
@@ -21,6 +22,8 @@ export type EventProjectionHost = {
   emitEvent(event: PiRuntimeEvent, context: PiEventContext): void
   /** 后台会话只上报运行状态给侧栏。 */
   emitActivity(event: SessionActivityEvent): void
+  /** 控制面任务会话的事件,不管前台后台都推给控制面(见 TaskBinding)。 */
+  emitTaskEvent(entry: AgentEntry, event: PiRuntimeEvent): void
   registerSubagentJob(entry: AgentEntry): AgentJob
 }
 
@@ -43,6 +46,11 @@ export class EventProjection {
       entry.outstandingUi.set(event.id, event.method)
     }
     this.trackSubagentLineage(entry, event)
+    if (entry.task) {
+      this.handleTaskEvent(entry, entry.task, event)
+      if (loop) this.handleLoopDetection(entry, loop)
+      return
+    }
     if (this.host.isActive(entry)) {
       this.host.emitEvent(event, entryContext(entry))
     }
@@ -53,6 +61,28 @@ export class EventProjection {
     // 后台会话:审批之类的请求先攒着,切回前台再补发;其余只上报运行状态给侧栏
     if ((event as { type?: string }).type === 'extension_ui_request') entry.pendingUi.push(event)
     this.host.emitActivity({ sessionFile: entry.sessionFile, running: entry.job.isRunActive() })
+  }
+
+  /**
+   * 任务会话:事件全部推给控制面;阻塞式审批没人能答,由闸门当场拒绝 —— 攒着等切前台
+   * 会让任务卡到超时。拒绝理由写回给 agent,它能据此换个做法或如实收尾。
+   */
+  private handleTaskEvent(entry: AgentEntry, task: TaskBinding, event: PiRuntimeEvent): void {
+    this.host.emitTaskEvent(entry, event)
+    const answered = task.gate.answer(event)
+    if (!answered) return
+    try {
+      entry.client.respondExtensionUi(answered.response)
+      entry.outstandingUi.delete(answered.response.id)
+    } catch (err) {
+      // 拒绝没送到 agent 手里,这一轮还卡着:记在闸门上,控制面超时收尾时看得到原因
+      task.gate.recordDeliveryFailure(answered.response.id, err instanceof Error ? err.message : String(err))
+      appendAppLog('warn', 'task.session', 'Could not deliver an unattended denial', {
+        taskId: task.taskId,
+        requestId: answered.response.id,
+        error: normalizeError(err),
+      })
+    }
   }
 
   private handleLoopDetection(entry: AgentEntry, detection: LoopDetection): void {
