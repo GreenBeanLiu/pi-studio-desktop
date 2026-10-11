@@ -157,6 +157,30 @@ function runArgs(kind: RunProfileKind, options: RunProfileCompileOptions): strin
   return []
 }
 
+/**
+ * 换模型后的启动配置。
+ *
+ * 新会话(新建聊天、控制面的任务会话)按启动配置里的 provider/model 起进程。它是打开工作区时编出来的,
+ * 以前切模型只改当前会话和设置文件,启动配置不变 —— 2026-10-11 v0.15.0 端到端:默认模型已经切到
+ * deepseek,任务会话照样起在打开工作区时那个(已被中转站下架的)模型上。沙箱和 env 跟模型无关,
+ * 不必重编整份;但摘要把 provider/model 算在里面,要跟着重算。
+ */
+export function withModelRoute<T extends CompiledRunProfile>(profile: T, provider: string, model: string): T {
+  const base = {
+    kind: profile.kind,
+    cwd: profile.cwd,
+    provider,
+    model,
+    cliPath: profile.cliPath,
+    args: profile.args,
+    thinkingLevel: profile.thinkingLevel,
+    sandboxMode: profile.sandboxMode,
+    security: profile.security,
+    declaredCapabilities: profile.declaredCapabilities,
+  } satisfies Omit<CompiledRunProfile, 'profileDigest' | 'env'>
+  return { ...profile, provider, model, profileDigest: profileDigest(base, profile.env) }
+}
+
 export class RunProfileCompiler {
   constructor(private readonly dependencies: RunProfileCompilerDependencies = DEFAULT_DEPENDENCIES) {}
 

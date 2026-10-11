@@ -3,7 +3,7 @@ import type { ImageContent } from '@earendil-works/pi-ai'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import { appendAppLog, normalizeError } from './app-log'
 import { agentConfigDir, saveSelectedModelRoute } from './settings'
-import { runProfileCompiler } from './run-profile'
+import { runProfileCompiler, withModelRoute } from './run-profile'
 import type {
   ExtensionUiResponse,
   ModelInfo,
@@ -655,7 +655,14 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
     if (this.active && !this.active.pi) return this.startPiSession(provider, modelId)
     const selected = await this.requirePi('切换模型').setModel(provider, modelId)
     saveSelectedModelRoute(provider, modelId)
+    this.useModelForNewSessions(provider, modelId)
     return selected
+  }
+
+  /** 之后新起的会话(新建聊天、任务会话)也用这个模型 —— 见 withModelRoute。 */
+  private useModelForNewSessions(provider: string, modelId: string): void {
+    const launch = this.pool.launchContext()
+    if (launch) this.pool.setLaunch(withModelRoute(launch, provider, modelId))
   }
 
   /** 从外部 agent 会话切回普通模型:起一个新的 pi 会话来接管,并把它切到目标模型。 */
@@ -665,6 +672,7 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
     this.activate(entry)
     const selected = await this.piOf(entry, '切换模型').setModel(provider, modelId)
     saveSelectedModelRoute(provider, modelId)
+    this.useModelForNewSessions(provider, modelId)
     return selected
   }
 

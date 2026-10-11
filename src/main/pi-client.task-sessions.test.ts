@@ -7,6 +7,9 @@ const pool = vi.hoisted(() => ({
   launch: { cwd: '/ws' } as unknown,
   entries: [] as Array<Record<string, unknown>>,
   stopEntry: vi.fn(),
+  setLaunch: vi.fn((launch: unknown) => {
+    pool.launch = launch
+  }),
   spawn: vi.fn(),
   spawnAcp: vi.fn(),
 }))
@@ -46,6 +49,7 @@ vi.mock('./pi-agent-pool', () => ({
     spawn = pool.spawn
     spawnAcp = pool.spawnAcp
     stopEntry = pool.stopEntry
+    setLaunch = pool.setLaunch
   },
 }))
 vi.mock('./acp-registry', () => ({
@@ -56,7 +60,10 @@ vi.mock('./acp-registry', () => ({
 vi.mock('./acp-launch-spec', () => ({ resolveAcpLaunchSpec: () => ({ ok: true, spec: { command: 'npx', args: [] } }) }))
 vi.mock('./acp-session-store', () => ({ AcpSessionStore: class { upsert = vi.fn() }, acpRecordToSessionInfo: vi.fn() }))
 vi.mock('./settings', () => ({ agentConfigDir: () => '/tmp/pi-agent', saveSelectedModelRoute: vi.fn() }))
-vi.mock('./run-profile', () => ({ runProfileCompiler: { compile: vi.fn() } }))
+vi.mock('./run-profile', () => ({
+  runProfileCompiler: { compile: vi.fn() },
+  withModelRoute: (launch: object, provider: string, model: string) => ({ ...launch, provider, model }),
+}))
 vi.mock('./pi-process', () => ({ loadRpcClient: vi.fn() }))
 vi.mock('./app-log', () => ({ appendAppLog: vi.fn(), normalizeError: (err: unknown) => err }))
 
@@ -132,5 +139,23 @@ describe('control-plane task sessions', () => {
     await expect(piClientManager.startTask({ taskId: 'dup', agent: 'pi', prompt: 'go' })).rejects.toThrow('已经在跑')
     pool.launch = null
     await expect(piClientManager.startTask({ taskId: 'y', agent: 'pi', prompt: 'go' })).rejects.toThrow('No workspace')
+  })
+})
+
+// 2026-10-11 回归:默认模型切到 deepseek 之后,任务会话照样起在打开工作区时那个模型上。
+describe('switching the model also changes what new sessions start with', () => {
+  it('updates the launch context after a successful switch', async () => {
+    pool.entries.length = 0
+    pool.launch = { cwd: '/ws', provider: 'three-a-main', model: 'deepseek-v4.1-flash' }
+    pool.spawn.mockReset().mockImplementation(async () => {
+      const entry = fakeEntry('pi')
+      entry.pi = { setModel: vi.fn().mockResolvedValue({ provider: 'deepseek', id: 'deepseek-v4-flash' }) }
+      return entry
+    })
+    await piClientManager.newSession()
+
+    await piClientManager.setModel('deepseek', 'deepseek-v4-flash')
+
+    expect(pool.launch).toMatchObject({ provider: 'deepseek', model: 'deepseek-v4-flash' })
   })
 })

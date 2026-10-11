@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RunProfileCompiler } from './run-profile'
+import { RunProfileCompiler, withModelRoute } from './run-profile'
 
 describe('RunProfileCompiler', () => {
   it('reports an unsandboxed chat as unrestricted host execution', async () => {
@@ -243,5 +243,36 @@ describe('RunProfileCompiler', () => {
 
     expect(first.profileDigest).toBe(second.profileDigest)
     expect(first.profileDigest).not.toContain('secret')
+  })
+})
+
+// 2026-10-11 回归:切模型后,新会话(新建聊天、任务会话)要用新模型,启动配置的摘要也要跟着变。
+describe('withModelRoute', () => {
+  function compilerFor(provider: string, model: string): RunProfileCompiler {
+    return new RunProfileCompiler({
+      loadSettings: () => ({ sandboxEnabled: false, subagentsEnabled: true }),
+      prepareRuntime: async () => ({ provider, model, env: { PI_STUDIO_LLM_KEY: 'k' }, gatewayProfiles: [] }),
+      prepareSandbox: async () => {
+        throw new Error('sandbox should not be prepared')
+      },
+      resolveCliPath: () => '/pi/cli.js',
+    })
+  }
+
+  it('gives the same profile a fresh compile with the new model would give', async () => {
+    const old = await compilerFor('three-a-main', 'deepseek-v4.1-flash').compile('chat', '/ws')
+    const fresh = await compilerFor('deepseek', 'deepseek-v4-flash').compile('chat', '/ws')
+
+    const switched = withModelRoute(old, 'deepseek', 'deepseek-v4-flash')
+
+    expect(switched).toEqual(fresh)
+    expect(switched.profileDigest).not.toBe(old.profileDigest)
+  })
+
+  it('keeps fields the launch context adds on top of the compiled profile', async () => {
+    const old = await compilerFor('three-a-main', 'x').compile('chat', '/ws')
+    const switched = withModelRoute({ ...old, sandboxSessionPaths: true }, 'deepseek', 'deepseek-v4-flash')
+    expect(switched.sandboxSessionPaths).toBe(true)
+    expect(switched.provider).toBe('deepseek')
   })
 })
