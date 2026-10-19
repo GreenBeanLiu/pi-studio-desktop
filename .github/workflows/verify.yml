@@ -1,6 +1,10 @@
 name: Verify
 
 on:
+  # 没人 push 也每天重跑一遍(依赖漂移、过期的测试数据也会红);n8n 的 CI 晨检 07:30 读最新结果推到手机。
+  schedule:
+    - cron: '30 21 * * *'  # UTC 21:30 = 北京 05:30
+  workflow_dispatch:
   push:
     branches: [master]
   pull_request:
