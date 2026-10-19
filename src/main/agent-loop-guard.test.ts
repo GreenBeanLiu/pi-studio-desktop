@@ -47,6 +47,27 @@ describe('agent loop guard', () => {
     expect(guard.observe(end('2'))).toBeNull()
   })
 
+  // 2026-10-19 回归:ACP agent 开始时参数是 {},4 条不同的 Bash 被记成同一个签名、整轮被掐掉。
+  it('does not call it a loop when the arguments are not known yet', () => {
+    const guard = new AgentLoopGuard()
+    guard.observe(start)
+    for (let i = 1; i <= 6; i += 1) {
+      guard.observe({ type: 'tool_execution_start', toolCallId: String(i), toolName: 'Bash', args: {} })
+      expect(guard.observe({ type: 'tool_execution_end', toolCallId: String(i), toolName: 'Bash', isError: false, result: 'ok' })).toBeNull()
+    }
+  })
+
+  it('still catches the same error repeating when the arguments are unknown', () => {
+    const guard = new AgentLoopGuard()
+    guard.observe(start)
+    let detection: ReturnType<AgentLoopGuard["observe"]> = null
+    for (let i = 1; i <= 3; i += 1) {
+      guard.observe({ type: 'tool_execution_start', toolCallId: String(i), toolName: 'Bash', args: {} })
+      detection = guard.observe({ type: 'tool_execution_end', toolCallId: String(i), toolName: 'Bash', isError: true, result: 'permission denied' })
+    }
+    expect(detection).toMatchObject({ kind: 'repeated-failure', count: 3 })
+  })
+
   it('resets counters at the beginning of the next run', () => {
     const guard = new AgentLoopGuard({ repeatedCallThreshold: 2 })
     guard.observe(start)

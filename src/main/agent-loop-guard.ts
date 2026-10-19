@@ -14,7 +14,11 @@ export type LoopDetection = {
   message: string
 }
 
-type PendingCall = { signature: string; toolName: string; serial: boolean }
+type PendingCall = { signature: string | null; toolName: string; serial: boolean }
+
+function isEmptyArgs(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0)
+}
 
 export type AgentLoopGuardOptions = {
   repeatedCallThreshold?: number
@@ -71,7 +75,10 @@ export class AgentLoopGuard {
     if (event.type === 'tool_execution_start' && event.toolCallId && event.toolName) {
       this.pending.set(event.toolCallId, {
         toolName: event.toolName,
-        signature: `${event.toolName}:${stable(event.args ?? {})}`,
+        // ACP agent(Claude Code / Codex)开始时参数常常还是 {},完整参数在后续 update 里才到。
+        // 没有参数就没法说「参数相同」—— 2026-10-19 一个 Claude Code 任务连跑 4 条不同的 Bash,
+        // 全记成 `Bash:{}`,被当成死循环掐掉了。
+        signature: isEmptyArgs(event.args) ? null : `${event.toolName}:${stable(event.args)}`,
         // Calls started while another tool is active may be an intentional parallel batch.
         serial: this.pending.size === 0,
       })
@@ -82,8 +89,8 @@ export class AgentLoopGuard {
     this.pending.delete(event.toolCallId)
     if (!call) return null
 
-    if (call.serial && call.signature === this.lastSignature) this.repeatedCallCount += 1
-    else if (call.serial) {
+    if (call.serial && call.signature !== null && call.signature === this.lastSignature) this.repeatedCallCount += 1
+    else if (call.serial && call.signature !== null) {
       this.lastSignature = call.signature
       this.repeatedCallCount = 1
     } else {
@@ -118,7 +125,7 @@ export class AgentLoopGuard {
       this.detected = true
       return {
         kind: 'repeated-call',
-        signature: call.signature,
+        signature: call.signature ?? call.toolName,
         count: this.repeatedCallCount,
         message: `${call.toolName} was called with the same arguments ${this.repeatedCallCount} times`,
       }
