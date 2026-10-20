@@ -62,6 +62,13 @@ export const DEFAULT_BINDINGS: ShortcutBinding[] = [
     help: { section: '导航', label: '切换到 3D 生成' },
   },
   {
+    id: 'view-video',
+    action: 'view.video',
+    combo: 'Mod+Digit5',
+    repeat: true,
+    help: { section: '导航', label: '切换到视频生成' },
+  },
+  {
     id: 'sidebar-toggle',
     action: 'sidebar.toggle',
     combo: 'Mod+B',

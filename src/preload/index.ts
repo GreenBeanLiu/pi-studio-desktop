@@ -83,6 +83,7 @@ const METHODS = {
   ],
   channels: ['list', 'save', 'test'],
   imageGen: ['health', 'generate', 'history', 'historyDelete', 'historyDeleteBatch', 'uploadReference'],
+  videoGen: ['health', 'generate', 'history'],
   model3d: [
     'health',
     'generate',

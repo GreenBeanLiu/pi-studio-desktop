@@ -42,6 +42,7 @@ import {
   syncWorkspaceMemoryExtension,
 } from './workspace-memory'
 import { registerImageGenHandlers } from './image-gen'
+import { registerVideoGenHandlers } from './video-gen'
 import { getCloudConnection, getDraftCloudConnection } from './cloud-connection'
 import { workspaceInventory } from './workspace-inventory'
 import { fetchLlmCatalog, listEnabledLlmRoutes } from './llm-gateway'
@@ -200,6 +201,7 @@ function persistApprovalAudits(
 
 export function registerIpcHandlers(): void {
   registerImageGenHandlers()
+  registerVideoGenHandlers()
   registerRoutines()
   registerChannels()
   registerSandbox()

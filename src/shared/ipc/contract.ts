@@ -244,6 +244,12 @@ export type DesktopApi = {
     historyDeleteBatch: (batchId: string) => Promise<{ ok: boolean }>
     uploadReference: (dataUrl: string) => Promise<{ ok: true; url: string } | { error: string }>
   }
+  /** 视频生成(2026-10-20):设备面 /videogen,APIMart 的 Grok Video 1.5。见 main/video-gen.ts */
+  videoGen: {
+    health: () => Promise<VideoGenHealth>
+    generate: (payload: VideoGenPayload) => Promise<VideoGenResult>
+    history: (limit?: number) => Promise<VideoGenHistoryItem[] | { error: string }>
+  }
   model3d: {
     health: () => Promise<Model3DHealth>
     generate: (payload: {
@@ -523,6 +529,26 @@ export type IsolatedApplyResult = {
   /** 全部干净应用后副本已删除 */
   removed: boolean
 }
+
+export type VideoResolution = '480p' | '720p'
+export type VideoAspectRatio = '9:16' | '16:9' | '1:1' | '3:2' | '2:3'
+export type VideoGenPayload = {
+  prompt: string
+  /** 本地图(data URL):先传 R2 再当首帧 */
+  frameDataUrl?: string
+  /** 已在 R2 上的图(出图历史里挑的) */
+  frameUrl?: string
+  /** 6–15 秒 */
+  duration?: number
+  resolution?: VideoResolution
+  aspectRatio?: VideoAspectRatio
+}
+export type VideoGenResult =
+  | { videoUrl: string; provider: string | null; durationSec: number | null; resolution: string | null; firstFrameUrl: string | null }
+  | { error: string }
+export type VideoGenHealth = { ok: true } | { ok: false; reason: string }
+/** 和出图历史同一张表(engine = cloud-video),url 是 mp4 */
+export type VideoGenHistoryItem = ImageGenHistoryItem
 
 export type ImageGenHistoryItem = {
   id: string

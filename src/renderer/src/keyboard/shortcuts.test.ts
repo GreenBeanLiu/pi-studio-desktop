@@ -46,8 +46,8 @@ describe('combo normalization', () => {
 })
 
 describe('view routing', () => {
-  it('routes Ctrl+1-4 to the four views', () => {
-    const views = ['view.chat', 'view.routines', 'view.imagegen', 'view.model3d']
+  it('routes Ctrl+1-5 to the five views', () => {
+    const views = ['view.chat', 'view.routines', 'view.imagegen', 'view.model3d', 'view.video']
     views.forEach((action, i) => {
       expect(actionFor(press({ key: String(i + 1), code: `Digit${i + 1}`, ctrlKey: true }))).toBe(
         action,

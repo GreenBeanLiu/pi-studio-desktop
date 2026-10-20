@@ -13,6 +13,7 @@ export type ShortcutActionId =
   | 'view.routines'
   | 'view.imagegen'
   | 'view.model3d'
+  | 'view.video'
   | 'sidebar.toggle'
   | 'settings.toggle'
   | 'composer.focus'
@@ -28,7 +29,7 @@ export type FocusScope =
   | 'session-list'
   | 'other'
 
-export type ShortcutView = 'chat' | 'routines' | 'imagegen' | 'model3d'
+export type ShortcutView = 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video'
 
 export type ShortcutContext = {
   view: ShortcutView
