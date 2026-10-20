@@ -14,8 +14,6 @@ const output: ImageOutputSettings = {
   providerStyle: 'natural',
   requestUser: 'pi-studio-test',
   advanced: true,
-  geminiAspectRatio: '16:9',
-  geminiImageSize: '2K',
   grokAspectRatio: '20:9',
   grokImageSize: '2K',
 }
@@ -24,7 +22,7 @@ describe('image generation model catalog', () => {
   it('maps stored engine preferences to a model', () => {
     expect(defaultImageModel('openai')).toBe('gpt-image-2')
     // Gemini Flash currently returns 400 through the configured relay; Pro is verified.
-    expect(defaultImageModel('gemini')).toBe('gemini-3-pro-image-preview')
+    expect(defaultImageModel('gemini')).toBe('gpt-image-2') // Gemini 下线后,存着它的设置回到默认
     // grok 2026-09-04 随 3A 下架移除,09-05 改挂 heilovehei 的 grok 分组后恢复
     expect(defaultImageModel('grok')).toBe('grok-imagine-image')
     // 本地引擎已移除:老设置里存的 'comfy' 回退到云端默认

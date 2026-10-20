@@ -26,7 +26,7 @@ describe('Image generation workspace regressions', () => {
 
   it('offers model-specific output parameters and one to four images', () => {
     expect(output).toContain("model.parameters === 'gpt'")
-    expect(output).toContain("model.parameters === 'gemini'")
+    expect(output).not.toContain("model.parameters === 'gemini'") // Gemini 2026-10-20 下线
     expect(output).toContain("model.parameters === 'grok'")
     expect(output).toContain('[1, 2, 3, 4]')
     expect(output).toContain('hasMask && count !== 1')
@@ -63,11 +63,10 @@ describe('Image generation workspace regressions', () => {
   })
 
   it('applies the template canvas to whichever field the current engine reads', () => {
-    // gpt 吃 size、gemini/grok 吃比例,点一个模板三者都要落到位
+    // gpt 吃 size、grok 吃比例,点一个模板两者都要落到位(gemini 2026-10-20 下线)
     expect(workspace).toContain('function applyStyleTemplate(template: ImageStyleTemplate)')
     expect(workspace).toContain('const ratio = templateAspectRatio(template.size)')
     expect(workspace).toContain('size: template.size,')
-    expect(workspace).toContain('geminiAspectRatio: ratio,')
     expect(workspace).toContain('grokAspectRatio: ratio,')
     // 提示词上限挪进 lib 才能被数据层测试守住
     expect(workspace).toContain('promptMax={IMAGE_PROMPT_MAX}')

@@ -2,10 +2,8 @@ import { Input, InputNumber, Select } from 'antd'
 import { createStyles } from 'antd-style'
 
 import type {
-  GeminiImageAspectRatio,
   GrokImageAspectRatio,
   GrokImageResolution,
-  GeminiImageResolution,
   ImageGenQuality,
   ImageGenSize,
 } from '../lib/api'
@@ -16,8 +14,6 @@ const GPT_SIZES: ImageGenSize[] = [
   '256x256', '512x512', '1024x1024', '1024x1536',
   '1536x1024', '1024x1792', '1792x1024', 'auto',
 ]
-const GEMINI_RATIOS: GeminiImageAspectRatio[] = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']
-const GEMINI_SIZES: GeminiImageResolution[] = ['1K', '2K', '4K']
 const GROK_RATIOS: GrokImageAspectRatio[] = [
   '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3',
   '2:1', '1:2', '19.5:9', '9:19.5', '20:9', '9:20', 'auto',
@@ -171,15 +167,6 @@ export default function ImageOutputSection({
               <label>用户<Input maxLength={64} value={value.requestUser} onChange={(event) => onChange({ requestUser: event.target.value })} /></label>
             </div>
           )}
-        </>
-      )}
-
-      {model.parameters === 'gemini' && (
-        <>
-          <span className={styles.label}>画幅比例</span>
-          <Options values={GEMINI_RATIOS} value={value.geminiAspectRatio} onChange={(geminiAspectRatio) => onChange({ geminiAspectRatio })} />
-          <span className={styles.label}>分辨率</span>
-          <Options values={GEMINI_SIZES} value={value.geminiImageSize} onChange={(geminiImageSize) => onChange({ geminiImageSize })} />
         </>
       )}
 

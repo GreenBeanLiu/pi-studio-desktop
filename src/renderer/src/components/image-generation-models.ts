@@ -1,8 +1,6 @@
 import type {
-  GeminiImageAspectRatio,
   GrokImageAspectRatio,
   GrokImageResolution,
-  GeminiImageResolution,
   ImageGenBackground,
   ImageGenEngine,
   ImageGenModeration,
@@ -22,7 +20,7 @@ export type ImageModelDefinition = {
   group: '云端模型'
   engine: ImageGenEngine
   cloudModel?: Exclude<ImageModel, 'gpt-image-2'>
-  parameters: 'gpt' | 'gemini' | 'grok'
+  parameters: 'gpt' | 'grok'
   acceptsImage: boolean
   acceptsMask: boolean
 }
@@ -38,17 +36,7 @@ export const IMAGE_MODELS: readonly ImageModelDefinition[] = [
     acceptsImage: true,
     acceptsMask: true,
   },
-  {
-    key: 'gemini-3-pro-image-preview',
-    label: 'Gemini 3 Pro',
-    description: '文生图 / 参考图改图 · 质量优先',
-    group: '云端模型',
-    engine: 'gemini',
-    cloudModel: 'gemini-3-pro-image-preview',
-    parameters: 'gemini',
-    acceptsImage: true,
-    acceptsMask: false,
-  },
+  // Gemini 3 Pro 2026-10-20 下线:唯一的供应商 ourzhishi 额度用完、弃用;找到新的家再加回来。
   // 2026-09-05 恢复:grok 从 3A 搬到 heilovehei 的 grok 分组后重新可用。
   // 都不吃参考图(这家的 grok 只有文生图),出图 5-10 秒,比 gpt-image-2 的 ~29 秒快得多。
   {
@@ -95,7 +83,6 @@ export function imageModel(key: ImageModel): ImageModelDefinition {
 }
 
 export function defaultImageModel(engine: string | undefined): ImageModel {
-  if (engine === 'gemini') return 'gemini-3-pro-image-preview'
   if (engine === 'grok') return 'grok-imagine-image'
   return 'gpt-image-2'
 }
@@ -112,8 +99,6 @@ export type ImageOutputSettings = {
   providerStyle: ImageGenProviderStyle
   requestUser: string
   advanced: boolean
-  geminiAspectRatio: GeminiImageAspectRatio
-  geminiImageSize: GeminiImageResolution
   grokAspectRatio: GrokImageAspectRatio
   grokImageSize: GrokImageResolution
 }
@@ -126,8 +111,8 @@ export type ImageGenerationRequest = {
   referenceUrls?: string[]
   maskDataUrl?: string
   size?: ImageGenSize
-  aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio
-  imageSize?: GeminiImageResolution | GrokImageResolution
+  aspectRatio?: GrokImageAspectRatio
+  imageSize?: GrokImageResolution
   n: number
   quality?: ImageGenQuality
   background?: ImageGenBackground
@@ -180,13 +165,6 @@ export function buildImageGenerationRequest(args: {
         providerStyle: args.output.providerStyle,
         ...(args.output.requestUser.trim() ? { user: args.output.requestUser.trim() } : {}),
       } : {}),
-    }
-  }
-  if (model.parameters === 'gemini') {
-    return {
-      ...base,
-      aspectRatio: args.output.geminiAspectRatio,
-      imageSize: args.output.geminiImageSize,
     }
   }
   if (model.parameters === 'grok') {

@@ -1416,7 +1416,6 @@ export default function SettingsModal({
                   style={{ width: 220 }}
                   options={[
                     { value: 'openai', label: 'GPT Image 2' },
-                    { value: 'gemini', label: 'Gemini Image' },
                   ]}
                 />
               </div>

@@ -40,8 +40,6 @@ const DEFAULT_OUTPUT: ImageOutputSettings = {
   providerStyle: 'vivid',
   requestUser: '',
   advanced: false,
-  geminiAspectRatio: '1:1',
-  geminiImageSize: '1K',
   grokAspectRatio: '1:1',
   grokImageSize: '1K',
 }
@@ -229,7 +227,6 @@ export default function ImageGenerationWorkspace({
     setOutput((current) => ({
       ...current,
       size: template.size,
-      geminiAspectRatio: ratio,
       grokAspectRatio: ratio,
     }))
   }
