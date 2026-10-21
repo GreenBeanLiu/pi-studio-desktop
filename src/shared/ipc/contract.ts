@@ -91,6 +91,8 @@ export type DesktopApi = {
       workspaceOpen?: boolean
     }>
     listCloudModels: (s: { relay: string; key: string }) => Promise<ProviderModelListResult>
+    /** 用应用令牌换一次性链接,在系统浏览器里打开云端管理台(main/admin-console.ts) */
+    openAdminConsole: () => Promise<{ ok: true } | { error: string }>
     onChanged: (cb: () => void) => () => void
   }
   llmProfiles: {

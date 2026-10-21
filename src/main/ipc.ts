@@ -43,6 +43,7 @@ import {
 } from './workspace-memory'
 import { registerImageGenHandlers } from './image-gen'
 import { registerVideoGenHandlers } from './video-gen'
+import { openAdminConsole } from './admin-console'
 import { getCloudConnection, getDraftCloudConnection } from './cloud-connection'
 import { workspaceInventory } from './workspace-inventory'
 import { fetchLlmCatalog, listEnabledLlmRoutes } from './llm-gateway'
@@ -429,6 +430,7 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle('settings:openAdminConsole', () => openAdminConsole())
   ipcMain.handle('settings:listCloudModels', async (_event, payload: unknown) => {
     try {
       if (!isRecord(payload)) throw new TypeError('云服务配置无效')

@@ -25,7 +25,7 @@ const METHODS = {
   app: ['version', 'piVersion'],
   clipboard: ['writeText'],
   diagnostics: ['getLogs', 'save', 'listBackups', 'restoreBackup'],
-  settings: ['load', 'save', 'listCloudModels', 'onChanged'],
+  settings: ['load', 'save', 'listCloudModels', 'openAdminConsole', 'onChanged'],
   llmProfiles: ['list', 'save', 'delete', 'refreshModels', 'providerHealth'],
   modelCatalog: ['loadProviderLabels'],
   sandbox: ['detect', 'imageStatus', 'buildImage', 'onBuildProgress'],

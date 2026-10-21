@@ -877,6 +877,17 @@ export default function SettingsModal({
                   </Button>
                 )}
                 <span className={styles.labelHint}>模型线路由云端统一下发，无需在本地配置。</span>
+                <Button
+                  size="small"
+                  disabled={!settings.cloudImageKeyConfigured || settings.clearCloudImageKey}
+                  onClick={async () => {
+                    const result = await api.settings.openAdminConsole()
+                    if ('error' in result) message.error(`打不开管理台：${result.error}`)
+                    else message.success('已在浏览器里打开管理台（登录 12 小时有效）')
+                  }}
+                >
+                  打开管理台（生图、视频、3D 供应商的 key 和开关）
+                </Button>
               </div>
 
               <div className={styles.section}>
