@@ -845,7 +845,7 @@ export default function SettingsModal({
                 <Input
                   value={settings.cloudImageRelay}
                   onChange={(e) => patch({ cloudImageRelay: e.target.value })}
-                  placeholder="https://trail-api.glanger.xyz（留空使用内置地址）"
+                  placeholder="https://pi-studio.glanger.xyz（留空使用内置地址）"
                 />
                 <Input.Password
                   value={settings.cloudImageKey}

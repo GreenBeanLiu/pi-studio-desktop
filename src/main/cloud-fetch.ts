@@ -6,7 +6,7 @@ import { net } from 'electron'
  * 2026-09-06:Mac 上设置页「云端模型线路」一直报 `fetch failed`,而终端里 curl 打同一个
  * 地址是 200 —— 看起来像后端问题,其实不是。
  *
- * 这台机器上 `trail-api.glanger.xyz` **只能经系统代理(127.0.0.1:7890)访问**,直连连
+ * 这台机器上 `trail-api.glanger.xyz`(以及 2026-10-21 起的 `pi-studio.glanger.xyz`,同一台服务器) **只能经系统代理(127.0.0.1:7890)访问**,直连连
  * DNS 都解析不了(`getaddrinfo` 直接失败,curl --noproxy 15 秒超时返回 000)。终端里
  * 之所以通,是因为 shell 里有 `HTTPS_PROXY`;而 **Finder 启动的 app 一个 shell 环境变量
  * 都没有**(见 shell-env.ts 顶部的注释),Node 的全局 fetch(undici)只认环境变量、

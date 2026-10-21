@@ -17,6 +17,8 @@ export const DEFAULT_ALLOWED_HOSTS = [
   'api.openai.com',
   'api.anthropic.com',
   'api.tavily.com',
+  'pi-studio.glanger.xyz',
+  // 旧域名:用户设置里还可能填着它
   'trail-api.glanger.xyz',
   'registry.npmjs.org',
   'registry.npmmirror.com',
