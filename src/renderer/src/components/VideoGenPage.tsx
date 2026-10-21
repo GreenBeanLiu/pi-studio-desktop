@@ -16,8 +16,8 @@ const MAX_BYTES = 18 * 1024 * 1024
 const PROMPT_MAX = 2000
 const DURATIONS = [6, 8, 10, 12, 15]
 const ASPECTS: VideoAspectRatio[] = ['9:16', '16:9', '1:1', '3:2', '2:3']
-// APIMart 标价换算成人民币(USD 7.2):480p 是模型页写的;720p 暂按宁可多算的价,对账后改
-const YUAN_PER_SECOND: Record<VideoResolution, number> = { '480p': 0.0102 * 7.2, '720p': 0.056 * 7.2 }
+// APIMart 实价(2026-10-21 用它的 /v1/usage 对过账),按 USD 7.2 换成人民币
+const YUAN_PER_SECOND: Record<VideoResolution, number> = { '480p': 0.0102 * 7.2, '720p': 0.01912 * 7.2 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -191,7 +191,7 @@ export default function VideoGenPage(): React.JSX.Element {
         </div>
 
         <div className={styles.footer}>
-          <span className={styles.hint}>约 ¥{estimate.toFixed(2)}（APIMart 暂定价，待对账）</span>
+          <span className={styles.hint}>约 ¥{estimate.toFixed(2)}（APIMart 实价）</span>
           <Button type="primary" loading={busy} disabled={!canGenerate} onClick={() => void generate()}>
             {busy ? `生成中 ${clock(now - (busySince ?? now))}` : '生成视频'}
           </Button>
