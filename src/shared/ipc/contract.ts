@@ -298,8 +298,12 @@ export type ImageModel =
   | 'grok-imagine-image'
   | 'grok-imagine-image-quality'
   | 'grok-imagine-image-2.0'
+  | 'nano-banana-2.1'
 
-export type GeminiImageAspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
+// Nano Banana 2.1(Gemini 系)的比例:十种常规 + 四种超长条 + auto(有参考图时跟参考图)
+export type GeminiImageAspectRatio =
+  | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
+  | '1:4' | '4:1' | '1:8' | '8:1' | 'auto'
 export type GeminiImageResolution = '1K' | '2K' | '4K'
 
 // Grok 只吃比例、不吃 size,而且比例集合比 Gemini 宽(有 20:9 这种超宽)。

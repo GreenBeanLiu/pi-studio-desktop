@@ -16,6 +16,8 @@ const output: ImageOutputSettings = {
   advanced: true,
   grokAspectRatio: '20:9',
   grokImageSize: '2K',
+  nanoAspectRatio: '1:4',
+  nanoImageSize: '4K',
 }
 
 describe('image generation model catalog', () => {
@@ -73,4 +75,19 @@ describe('image generation model catalog', () => {
   // 它是拿 grok-imagine-image-quality 驱动的,而 grok 已随 3A 下架移除。目录里现在
   // 每个模型都 acceptsImage: true,那条分支暂时没有模型能覆盖到;代码里保留着,
   // 等下一个不吃参考图的模型进来再补测试。
+
+  it('sends Nano Banana its ratio and resolution, keeps references, drops a mask', () => {
+    const request = buildImageGenerationRequest({
+      modelKey: 'nano-banana-2.1',
+      prompt: '换成大理石台面',
+      batchId: 'batch-3',
+      referenceUrls: ['https://assets.example/input.png'],
+      maskDataUrl: 'data:image/png;base64,mask',
+      output,
+    })
+    expect(request).toMatchObject({ model: 'nano-banana-2.1', engine: 'gemini', aspectRatio: '1:4', imageSize: '4K', n: 4 })
+    expect(request.referenceUrls).toEqual(['https://assets.example/input.png'])
+    expect(request.maskDataUrl).toBeUndefined()
+    expect(request.quality).toBeUndefined()
+  })
 })

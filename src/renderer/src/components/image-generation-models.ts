@@ -1,4 +1,6 @@
 import type {
+  GeminiImageAspectRatio,
+  GeminiImageResolution,
   GrokImageAspectRatio,
   GrokImageResolution,
   ImageGenBackground,
@@ -20,7 +22,7 @@ export type ImageModelDefinition = {
   group: '云端模型'
   engine: ImageGenEngine
   cloudModel?: Exclude<ImageModel, 'gpt-image-2'>
-  parameters: 'gpt' | 'grok'
+  parameters: 'gpt' | 'grok' | 'nano'
   acceptsImage: boolean
   acceptsMask: boolean
 }
@@ -36,7 +38,19 @@ export const IMAGE_MODELS: readonly ImageModelDefinition[] = [
     acceptsImage: true,
     acceptsMask: true,
   },
-  // Gemini 3 Pro 2026-10-20 下线:唯一的供应商 ourzhishi 额度用完、弃用;找到新的家再加回来。
+  // 2026-10-22:Nano Banana 2.1 经 APIMart(Ext 版,1K ¥0.09/张),顶替 10-20 下线的 Gemini 3 Pro。
+  // 能吃参考图(电商换场景/换模特就靠它),不做蒙版;出图 ~50 秒。
+  {
+    key: 'nano-banana-2.1',
+    label: 'Nano Banana 2.1',
+    description: '文生图 / 改图 · 保留产品细节',
+    group: '云端模型',
+    engine: 'gemini',
+    cloudModel: 'nano-banana-2.1',
+    parameters: 'nano',
+    acceptsImage: true,
+    acceptsMask: false,
+  },
   // 2026-09-05 恢复:grok 从 3A 搬到 heilovehei 的 grok 分组后重新可用。
   // 都不吃参考图(这家的 grok 只有文生图),出图 5-10 秒,比 gpt-image-2 的 ~29 秒快得多。
   {
@@ -101,6 +115,8 @@ export type ImageOutputSettings = {
   advanced: boolean
   grokAspectRatio: GrokImageAspectRatio
   grokImageSize: GrokImageResolution
+  nanoAspectRatio: GeminiImageAspectRatio
+  nanoImageSize: GeminiImageResolution
 }
 
 export type ImageGenerationRequest = {
@@ -111,8 +127,8 @@ export type ImageGenerationRequest = {
   referenceUrls?: string[]
   maskDataUrl?: string
   size?: ImageGenSize
-  aspectRatio?: GrokImageAspectRatio
-  imageSize?: GrokImageResolution
+  aspectRatio?: GrokImageAspectRatio | GeminiImageAspectRatio
+  imageSize?: GrokImageResolution | GeminiImageResolution
   n: number
   quality?: ImageGenQuality
   background?: ImageGenBackground
@@ -172,6 +188,13 @@ export function buildImageGenerationRequest(args: {
       ...base,
       aspectRatio: args.output.grokAspectRatio,
       imageSize: args.output.grokImageSize,
+    }
+  }
+  if (model.parameters === 'nano') {
+    return {
+      ...base,
+      aspectRatio: args.output.nanoAspectRatio,
+      imageSize: args.output.nanoImageSize,
     }
   }
   return base

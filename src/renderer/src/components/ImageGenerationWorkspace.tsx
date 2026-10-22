@@ -42,6 +42,9 @@ const DEFAULT_OUTPUT: ImageOutputSettings = {
   advanced: false,
   grokAspectRatio: '1:1',
   grokImageSize: '1K',
+  // auto:有参考图跟参考图的比例,没有就 1:1
+  nanoAspectRatio: 'auto',
+  nanoImageSize: '1K',
 }
 
 type PendingBatch = { id: string; prompt: string; model: string; count: number }
@@ -181,6 +184,8 @@ function providerTag(engine: string, provider: string | null, model: string | nu
     ? 'SDXL'
     : model?.startsWith('gemini')
       ? 'Gemini'
+      : model?.startsWith('nano-banana')
+        ? 'Nano Banana'
       : model?.startsWith('grok')
         ? 'Grok'
         : engine.startsWith('comfy')
@@ -228,6 +233,7 @@ export default function ImageGenerationWorkspace({
       ...current,
       size: template.size,
       grokAspectRatio: ratio,
+      nanoAspectRatio: ratio,
     }))
   }
 

@@ -182,7 +182,10 @@ export type ImageGenSize =
   | '1024x1792'
   | '1792x1024'
   | 'auto'
-export type GeminiImageAspectRatio = '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
+// Nano Banana 2.1(Gemini 系)的比例:十种常规 + 四种超长条 + auto(有参考图时跟参考图)
+export type GeminiImageAspectRatio =
+  | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
+  | '1:4' | '4:1' | '1:8' | '8:1' | 'auto'
 export type GeminiImageResolution = '1K' | '2K' | '4K'
 export type GrokImageAspectRatio =
   | '1:1'
@@ -382,13 +385,13 @@ export function registerImageGenHandlers(): void {
       // engine 是遗留字段(cloudGenerate 只认 model),但类型上必填 —— 按模型名推,
       // 别随手塞一个和 model 对不上的值
       const model = (payload.model ?? '').toLowerCase()
-      const engine = model.includes('gemini') ? 'gemini' : model.includes('grok') ? 'grok' : 'openai'
+      const engine = model.includes('gemini') || model.includes('nano-banana') ? 'gemini' : model.includes('grok') ? 'grok' : 'openai'
       const result = await generateImage({
         ...payload,
         engine,
         model: payload.model as ImageModel | undefined,
         size: payload.size as ImageGenSize | undefined,
-        aspectRatio: payload.aspectRatio as GeminiImageAspectRatio | undefined,
+        aspectRatio: payload.aspectRatio as GeminiImageAspectRatio | GrokImageAspectRatio | undefined,
         downloadResult: false,
       })
       if ('error' in result) return { error: result.error }
