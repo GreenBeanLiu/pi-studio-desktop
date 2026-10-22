@@ -19,6 +19,15 @@ describe('routine workflow node schemas', () => {
     expect(() => imagegen.parse({ ...base, size: '4096x4096' })).toThrow('输入无效')
   })
 
+  it('loads a saved 3D step that still names Hi3D by sending it to Tripo, and rejects unknown providers', () => {
+    const model3d = routineStepSchema('model3d')
+    const base = { id: 'step', name: '3D', type: 'model3d' as const, prompt: '杯子' }
+    const legacy = model3d.parse({ ...base, provider: 'hi3d' })
+    expect(legacy.provider).toBeUndefined()
+    expect(model3d.parse({ ...base, provider: 'tripo' })).toMatchObject({ provider: 'tripo' })
+    expect(() => model3d.parse({ ...base, provider: 'meshy' })).toThrow('输入无效')
+  })
+
   it('validates optional output fields and image descriptors', () => {
     expect(() => stepProductSchema.parse({ output: 'done', imageUrl: 123 })).toThrow('StepProduct')
     expect(

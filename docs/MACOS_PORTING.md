@@ -27,7 +27,7 @@ Electron 42 + electron-vite 2
 - **持久化**：
   - 设置：`electron-store` 风格的 `settings.json`（`app.getPath('userData')/settings.json`，见 `src/main/settings.ts`）。
   - Routines 数据库：**`node:sqlite`（Electron 42 内置，非原生模块）** → **不需要按架构重编**，跨平台直接可用。
-- 功能页：Chat(agent) / Routines / 生图(gpt-image-2) / 3D(Tripo/Hi3D/Blender)。换装视频(Kling)2026-09-29 已删。
+- 功能页：Chat(agent) / Routines / 生图(gpt-image-2) / 3D(Tripo/Blender;Hi3D 2026-10-23 已删)。换装视频(Kling)2026-09-29 已删。
 
 **没有需要按平台重编的原生 node 插件**（SQLite 用内置的 `node:sqlite`）→ 省掉最大的一块移植麻烦。
 
@@ -210,7 +210,7 @@ pnpm exec electron-vite build && pnpm exec electron-builder --mac --publish neve
 > **决策：Mac 版不支持 Blender 引擎，不做移植**（产品定位：不在 mac 上做 3D 建模）。
 > Mac 上该功能直接**隐藏/降级**即可——现有 `platform!=='win32'` 早退逻辑已经让它优雅失效，
 > **无需为 mac 补任何 Blender 分支**。
-> 影响面很小：**换装、生图、图生 3D(Tripo/Hi3D，走云中转)、three.js 代码建模、agent 全不依赖 Blender**，
+> 影响面很小：**换装、生图、图生 3D(Tripo，走云中转)、three.js 代码建模、agent 全不依赖 Blender**，
 > 在 mac 上都照常可用；唯独「3D → Blender 引擎」这一个子入口在 mac 隐藏。
 
 ---

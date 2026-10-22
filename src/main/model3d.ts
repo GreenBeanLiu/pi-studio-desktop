@@ -32,8 +32,8 @@ export type Model3DHealth = {
   providers?: Record<Model3DProvider, boolean>
 }
 
-/** 云端 3D 服务商。Hi3D 是纯 image-to-3D,没有文生 3D 接口。 */
-export type Model3DProvider = 'tripo' | 'hi3d'
+/** 云端 3D 服务商。Hi3D 2026-10-23 删了(按次付费、不用),只剩 Tripo。 */
+export type Model3DProvider = 'tripo'
 
 export type Model3DOptions = {
   modelVersion?: string
@@ -41,8 +41,6 @@ export type Model3DOptions = {
   texture?: boolean
   pbr?: boolean
   style?: string
-  /** Hi3D 专有:分辨率档位,合法值随 modelVersion 变化 */
-  resolution?: string
   /** Tripo 专有:几何质量,仅 v3.0/v3.1 支持(P1 已预调优、不接受该参数) */
   geometryQuality?: string
 }
@@ -452,7 +450,6 @@ export function registerModel3d(): void {
           if (body.model3dProviders) {
             providers = {
               tripo: !!body.model3dProviders.tripo,
-              hi3d: !!body.model3dProviders.hi3d,
             }
           }
         }

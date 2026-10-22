@@ -31,7 +31,6 @@ const PROVIDERS: Array<{
   label: string
   supportsText: boolean
   versions: Array<{ value: string; label: string }>
-  resolutions?: Record<string, string[]>
   /** 每个模型版本的面数上限(Tripo) */
   faceMax?: Record<string, number>
   /** 支持 geometry_quality(Ultra 模式)的版本 */
@@ -298,8 +297,6 @@ export default function Model3DPage(): React.JSX.Element {
   const cloudProviderMissing =
     (mode === 'text' || mode === 'image') && providerReady?.[provider] === false
   const versionOptions = activeProvider.versions
-  const resolutionOptions =
-    activeProvider.resolutions?.[opts.modelVersion ?? versionOptions[0].value] ?? []
   const currentVersion = opts.modelVersion ?? versionOptions[0].value
   const faceMax = activeProvider.faceMax?.[currentVersion] ?? 50_000
   const supportsGeometryQuality = activeProvider.geometryQuality?.includes(currentVersion) ?? false
@@ -685,7 +682,6 @@ export default function Model3DPage(): React.JSX.Element {
                     return {
                       ...o,
                       modelVersion: v || undefined,
-                      resolution: activeProvider.resolutions?.[v]?.[0],
                       // 换到上限更低的版本时收回超限值,否则会被 API 拒
                       faceLimit: o.faceLimit ? Math.min(o.faceLimit, nextMax) : undefined,
                       // P1 等版本不接受 geometry_quality,别把它带过去
@@ -698,17 +694,6 @@ export default function Model3DPage(): React.JSX.Element {
                 options={versionOptions}
               />
             </div>
-
-            {resolutionOptions.length > 0 && (
-              <div className={styles.field}>
-                <span className={styles.label}>分辨率</span>
-                <Select
-                  value={opts.resolution ?? resolutionOptions[0]}
-                  onChange={(v) => setOpts((o) => ({ ...o, resolution: v }))}
-                  options={resolutionOptions.map((r) => ({ value: r, label: r }))}
-                />
-              </div>
-            )}
 
             {supportsGeometryQuality && (
               <div className={styles.field}>

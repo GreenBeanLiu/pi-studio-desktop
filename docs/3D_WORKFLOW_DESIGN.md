@@ -9,7 +9,7 @@
 
 | 你的设想 | 现状 | 要完善的增量 |
 |---|---|---|
-| **① 图 → 模型**（图可 gpt-image-2 生成） | 图生/文生 3D 已上线（Tripo + Hi3D，云中转） | **加一环：文字 → gpt-image-2 生图 → 图生 3D** 的一条龙（复用换装那套 gpt-image-2 编排） |
+| **① 图 → 模型**（图可 gpt-image-2 生成） | 图生/文生 3D 已上线（Tripo;Hi3D 10-23 已删，云中转） | **加一环：文字 → gpt-image-2 生图 → 图生 3D** 的一条龙（复用换装那套 gpt-image-2 编排） |
 | **② 代码迭代 → 模型** | 代码建模已上线（pi-agent 手搓 three.js、自测、可增量 refine） | **闭环化：渲染 → AI 视觉评审 → 自动改码 → 再渲染**，用已有的 `vision-review` 当验收门 |
 
 换句话说：**引擎都在，缺的是"把 gpt-image-2 接到图生 3D 前面"和"把视觉评审接回代码迭代里形成闭环"这两根线。**
@@ -20,7 +20,7 @@
 
 | 能力 | 文件 | 说明 |
 |---|---|---|
-| **图生 / 文生 3D** | `src/main/model3d.ts` | 走云中转 `/model3d` → 服务端 Hatchet `gen-model-3d` → **Tripo / Hi3D** → R2 上的 glb，下载到本地。Tripo 支持文生+图生，Hi3D 纯图生。 |
+| **图生 / 文生 3D** | `src/main/model3d.ts` | 走云中转 `/model3d` → 服务端 Hatchet `gen-model-3d` → **Tripo(Hi3D 10-23 已删)** → R2 上的 glb，下载到本地。Tripo 支持文生+图生，Hi3D 纯图生。 |
 | **代码建模（three.js）** | `src/main/code-model.ts` | 内嵌 **pi-agent** 在预置 `build-model.js` 骨架里手搓 `buildModel(THREE)`，用 **embedded node**（不依赖系统 node）导出 glb。带 **z-fighting 几何审计门**、自测 `MODEL_OK`、`object-to-threejs-procedural` skill；**已支持增量 refine**（`sourceId` → 拷贝上一版代码、agent 只做增量修改）。 |
 | **Blender 建模** | `src/main/blender-model.ts`、`blender-setup.ts` | 驱动本机 Blender 出 glb（Windows 专属，见移植文档）。 |
 | **AI 视觉还原度评审** | `src/main/vision-review.ts` | 把「参考图/提示词 + 模型渲染截图」发给视觉模型，返回 `{score:0-100, notes}`。灵感来自 threejs-object-sculptor 的「Screenshot Feedback Gate：像素对比不是权威，AI 视觉才是」。**目前只在生成后异步打分展示，还没接回迭代。** |
@@ -35,7 +35,7 @@
 ### 目标管道
 ```
 输入(文字描述 或 上传参考图)
-   └─(可选,新)─ gpt-image-2 生成参考图  ──→  图生 3D(Tripo/Hi3D)  ──→  glb  ──→  视觉评审打分
+   └─(可选,新)─ gpt-image-2 生成参考图  ──→  图生 3D(Tripo)  ──→  glb  ──→  视觉评审打分
 ```
 
 ### 现状 vs 要新建
@@ -85,7 +85,7 @@
 ### 选型速记（三条路各管什么）
 | 目标模型 | 走哪条 |
 |---|---|
-| **有机 / 写实 / 带细节纹理**（角色、动物、道具毛发肌理） | **图生 3D**（Tripo/Hi3D）——别写代码 |
+| **有机 / 写实 / 带细节纹理**（角色、动物、道具毛发肌理） | **图生 3D**（Tripo）——别写代码 |
 | **硬表面 / 可编辑可动画**，方块·圆柱拼得出、纯色/金属塑料质感 | **Three.js 代码建模（默认）** |
 | **代码可控 + 布尔/细分/真材质**（挖孔、圆角平滑、真实贴图） | **Blender**（窄场景、Windows 专属、P3） |
 
@@ -133,7 +133,7 @@ P1 最快见效（跟换装几乎同构）；P2 是你设想里最有意思、�
 
 | 关注点 | 文件 |
 |---|---|
-| 图生/文生 3D(Tripo/Hi3D) | `src/main/model3d.ts` |
+| 图生/文生 3D(Tripo) | `src/main/model3d.ts` |
 | 代码建模(three.js, 迭代) | `src/main/code-model.ts` |
 | AI 视觉评审(闭环反馈信号) | `src/main/vision-review.ts` |
 | Blender 引擎 | `src/main/blender-model.ts`、`blender-setup.ts` |

@@ -34,7 +34,7 @@ export type RoutineStep = {
   /** export:Markdown 原文或公众号 HTML 片段 */
   format?: RoutineArtifactFormat
   /** model3d:图生 3D 服务商 */
-  provider?: 'tripo' | 'hi3d'
+  provider?: 'tripo'
   /**
    * model3d:输入图的模板(默认 {{prev.imageUrl}});解析成 URL 走图生 3D,否则用 prompt 文生 3D。
    * app-icon:母图。imagegen:可选参考图,留空即文生图。
@@ -74,7 +74,9 @@ export function routineStepSchema<K extends RoutineStepType>(type: K): { parse: 
       if (!value || typeof value !== 'object') {
         throw new Error(`工作流节点输入与定义不匹配: ${type}`)
       }
-      const step = value as Partial<RoutineStep>
+      const step = { ...(value as Partial<RoutineStep>) }
+      // Hi3D 2026-10-23 下线;存着它的老工作流改走 Tripo(Tripo 也做图生 3D),别因此整条加载失败
+      if ((step.provider as string | undefined) === 'hi3d') delete step.provider
       const optionalStrings: Array<keyof RoutineStep> = [
         'prompt',
         'channelId',
@@ -103,7 +105,7 @@ export function routineStepSchema<K extends RoutineStepType>(type: K): { parse: 
           !['256x256', '512x512', '1024x1024', '1024x1536', '1536x1024', '1024x1792', '1792x1024', 'auto'].includes(
             step.size,
           )) ||
-        (step.provider !== undefined && !['tripo', 'hi3d'].includes(step.provider)) ||
+        (step.provider !== undefined && step.provider !== 'tripo') ||
         (step.format !== undefined && !['html', 'markdown'].includes(step.format)) ||
         !isRoutineStepComplete(step as RoutineStep)
       ) {

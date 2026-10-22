@@ -328,8 +328,8 @@ export type BlenderSetupStatus = {
   error?: string
 }
 
-/** 云端 3D 服务商。Hi3D 是纯 image-to-3D,没有文生 3D 接口。 */
-export type Model3DProvider = 'tripo' | 'hi3d'
+/** 云端 3D 服务商。Hi3D 2026-10-23 删了(按次付费、不用),只剩 Tripo。 */
+export type Model3DProvider = 'tripo'
 
 export type Model3DOptions = {
   modelVersion?: string
@@ -337,8 +337,6 @@ export type Model3DOptions = {
   texture?: boolean
   pbr?: boolean
   style?: string
-  /** Hi3D 专有:分辨率档位,合法值随 modelVersion 变化 */
-  resolution?: string
   /** Tripo 专有:几何质量,仅 v3.0/v3.1 支持(P1 已预调优、不接受该参数) */
   geometryQuality?: string
 }
@@ -416,7 +414,7 @@ export type RoutineStep = {
   path?: string
   format?: 'markdown' | 'html'
   /** model3d:图生 3D 服务商 */
-  provider?: 'tripo' | 'hi3d'
+  provider?: 'tripo'
   /** model3d / app-icon:输入图模板(默认 {{prev.imageUrl}});imagegen:可选参考图,留空即文生图 */
   imageRef?: string
   /** imagegen:输出尺寸,留空走服务端默认 */
