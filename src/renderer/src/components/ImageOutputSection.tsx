@@ -2,6 +2,7 @@ import { Input, InputNumber, Select } from 'antd'
 import { createStyles } from 'antd-style'
 
 import type {
+  FlareImageAspectRatio,
   GeminiImageAspectRatio,
   GeminiImageResolution,
   GrokImageAspectRatio,
@@ -28,6 +29,9 @@ const NANO_RATIOS: GeminiImageAspectRatio[] = [
 ]
 // 按张计费:1K $0.012、2K/4K 更贵(以 APIMart 账单为准)
 const NANO_SIZES: GeminiImageResolution[] = ['1K', '2K', '4K']
+const FLARE_RATIOS: FlareImageAspectRatio[] = [
+  'auto', '1:1', '3:4', '4:3', '2:3', '3:2', '9:16', '16:9', '21:9', '27:16', '16:27', '9:8', '8:9',
+]
 const QUALITIES: ImageGenQuality[] = ['low', 'medium', 'high', 'auto', 'standard', 'hd']
 
 // 全部走主题 token,不再硬编码浅色 —— 之前 rgba(0,0,0,…) 在暗色下几乎不可见
@@ -193,6 +197,15 @@ export default function ImageOutputSection({
           <Options values={NANO_RATIOS} value={value.nanoAspectRatio} onChange={(nanoAspectRatio) => onChange({ nanoAspectRatio })} />
           <span className={styles.label}>分辨率</span>
           <Options values={NANO_SIZES} value={value.nanoImageSize} onChange={(nanoImageSize) => onChange({ nanoImageSize })} />
+        </>
+      )}
+
+      {model.parameters === 'flare' && (
+        <>
+          <span className={styles.label}>画幅比例(auto 跟参考图;27:16 / 16:27 / 9:8 / 8:9 只出 1K)</span>
+          <Options values={FLARE_RATIOS} value={value.flareAspectRatio} onChange={(flareAspectRatio) => onChange({ flareAspectRatio })} />
+          <span className={styles.label}>分辨率</span>
+          <Options values={NANO_SIZES} value={value.flareImageSize} onChange={(flareImageSize) => onChange({ flareImageSize })} />
         </>
       )}
 

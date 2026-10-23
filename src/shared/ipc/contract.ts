@@ -299,12 +299,17 @@ export type ImageModel =
   | 'grok-imagine-image-quality'
   | 'grok-imagine-image-2.0'
   | 'nano-banana-2.1'
+  | 'gpt-image-2.5-flare'
 
 // Nano Banana 2.1(Gemini 系)的比例:十种常规 + 四种超长条 + auto(有参考图时跟参考图)
 export type GeminiImageAspectRatio =
   | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
   | '1:4' | '4:1' | '1:8' | '8:1' | 'auto'
 export type GeminiImageResolution = '1K' | '2K' | '4K'
+
+// GPT Image 2.5 Flare(kie.ai,2026-10-23)的比例;27:16 / 16:27 / 9:8 / 8:9 只出 1K
+export type FlareImageAspectRatio =
+  | 'auto' | '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | '27:16' | '16:27' | '9:8' | '8:9'
 
 // Grok 只吃比例、不吃 size,而且比例集合比 Gemini 宽(有 20:9 这种超宽)。
 // 分辨率只到 2K —— 4K 会被后端挡下。

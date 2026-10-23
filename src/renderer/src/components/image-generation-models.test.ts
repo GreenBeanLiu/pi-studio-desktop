@@ -18,6 +18,8 @@ const output: ImageOutputSettings = {
   grokImageSize: '2K',
   nanoAspectRatio: '1:4',
   nanoImageSize: '4K',
+  flareAspectRatio: '9:8',
+  flareImageSize: '2K',
 }
 
 describe('image generation model catalog', () => {
@@ -89,5 +91,21 @@ describe('image generation model catalog', () => {
     expect(request.referenceUrls).toEqual(['https://assets.example/input.png'])
     expect(request.maskDataUrl).toBeUndefined()
     expect(request.quality).toBeUndefined()
+  })
+
+  it('sends Flare its ratio, keeps references, and holds the 1K-only ratios at 1K', () => {
+    const request = buildImageGenerationRequest({
+      modelKey: 'gpt-image-2.5-flare',
+      prompt: '新品海报',
+      batchId: 'batch-4',
+      referenceUrls: ['https://assets.example/input.png'],
+      maskDataUrl: 'data:image/png;base64,mask',
+      output,
+    })
+    expect(request).toMatchObject({ model: 'gpt-image-2.5-flare', aspectRatio: '9:8', imageSize: '1K' })
+    expect(request.referenceUrls).toEqual(['https://assets.example/input.png'])
+    expect(request.maskDataUrl).toBeUndefined()
+    const wide = buildImageGenerationRequest({ modelKey: 'gpt-image-2.5-flare', prompt: 'x', batchId: 'b', output: { ...output, flareAspectRatio: '16:9' } })
+    expect(wide.imageSize).toBe('2K')
   })
 })

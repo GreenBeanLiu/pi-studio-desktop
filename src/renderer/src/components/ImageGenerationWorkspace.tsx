@@ -45,6 +45,8 @@ const DEFAULT_OUTPUT: ImageOutputSettings = {
   // auto:有参考图跟参考图的比例,没有就 1:1
   nanoAspectRatio: 'auto',
   nanoImageSize: '1K',
+  flareAspectRatio: 'auto',
+  flareImageSize: '1K',
 }
 
 type PendingBatch = { id: string; prompt: string; model: string; count: number }
@@ -186,6 +188,8 @@ function providerTag(engine: string, provider: string | null, model: string | nu
       ? 'Gemini'
       : model?.startsWith('nano-banana')
         ? 'Nano Banana'
+        : model?.startsWith('gpt-image-2.5-flare')
+          ? 'GPT 2.5 Flare'
       : model?.startsWith('grok')
         ? 'Grok'
         : engine.startsWith('comfy')
@@ -234,6 +238,7 @@ export default function ImageGenerationWorkspace({
       size: template.size,
       grokAspectRatio: ratio,
       nanoAspectRatio: ratio,
+      flareAspectRatio: ratio,
     }))
   }
 

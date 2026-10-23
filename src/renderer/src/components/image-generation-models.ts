@@ -1,4 +1,5 @@
 import type {
+  FlareImageAspectRatio,
   GeminiImageAspectRatio,
   GeminiImageResolution,
   GrokImageAspectRatio,
@@ -22,7 +23,7 @@ export type ImageModelDefinition = {
   group: '云端模型'
   engine: ImageGenEngine
   cloudModel?: Exclude<ImageModel, 'gpt-image-2'>
-  parameters: 'gpt' | 'grok' | 'nano'
+  parameters: 'gpt' | 'grok' | 'nano' | 'flare'
   acceptsImage: boolean
   acceptsMask: boolean
 }
@@ -37,6 +38,18 @@ export const IMAGE_MODELS: readonly ImageModelDefinition[] = [
     parameters: 'gpt',
     acceptsImage: true,
     acceptsMask: true,
+  },
+  // 2026-10-23:GPT Image 2.5 Flare,只有 kie.ai 有(1K $0.03/张,gpt-image-2 的 3.5 倍),海报感更强
+  {
+    key: 'gpt-image-2.5-flare',
+    label: 'GPT Image 2.5 Flare',
+    description: '新版 · 海报质感 · 文生 / 改图',
+    group: '云端模型',
+    engine: 'openai',
+    cloudModel: 'gpt-image-2.5-flare',
+    parameters: 'flare',
+    acceptsImage: true,
+    acceptsMask: false,
   },
   // 2026-10-22:Nano Banana 2.1 经 APIMart(Ext 版,1K ¥0.09/张),顶替 10-20 下线的 Gemini 3 Pro。
   // 能吃参考图(电商换场景/换模特就靠它),不做蒙版;出图 ~50 秒。
@@ -117,6 +130,8 @@ export type ImageOutputSettings = {
   grokImageSize: GrokImageResolution
   nanoAspectRatio: GeminiImageAspectRatio
   nanoImageSize: GeminiImageResolution
+  flareAspectRatio: FlareImageAspectRatio
+  flareImageSize: GeminiImageResolution
 }
 
 export type ImageGenerationRequest = {
@@ -127,7 +142,7 @@ export type ImageGenerationRequest = {
   referenceUrls?: string[]
   maskDataUrl?: string
   size?: ImageGenSize
-  aspectRatio?: GrokImageAspectRatio | GeminiImageAspectRatio
+  aspectRatio?: GrokImageAspectRatio | GeminiImageAspectRatio | FlareImageAspectRatio
   imageSize?: GrokImageResolution | GeminiImageResolution
   n: number
   quality?: ImageGenQuality
@@ -188,6 +203,15 @@ export function buildImageGenerationRequest(args: {
       ...base,
       aspectRatio: args.output.grokAspectRatio,
       imageSize: args.output.grokImageSize,
+    }
+  }
+  if (model.parameters === 'flare') {
+    const oddRatio = ['27:16', '16:27', '9:8', '8:9'].includes(args.output.flareAspectRatio)
+    return {
+      ...base,
+      aspectRatio: args.output.flareAspectRatio,
+      // 这四个比例只出 1K,别让后端 400
+      imageSize: oddRatio ? '1K' : args.output.flareImageSize,
     }
   }
   if (model.parameters === 'nano') {

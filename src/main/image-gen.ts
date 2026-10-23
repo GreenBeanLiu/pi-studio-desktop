@@ -187,6 +187,9 @@ export type GeminiImageAspectRatio =
   | '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9'
   | '1:4' | '4:1' | '1:8' | '8:1' | 'auto'
 export type GeminiImageResolution = '1K' | '2K' | '4K'
+// GPT Image 2.5 Flare(kie.ai,2026-10-23)的比例;27:16 / 16:27 / 9:8 / 8:9 只出 1K
+export type FlareImageAspectRatio =
+  | 'auto' | '1:1' | '3:2' | '2:3' | '4:3' | '3:4' | '16:9' | '9:16' | '21:9' | '27:16' | '16:27' | '9:8' | '8:9'
 export type GrokImageAspectRatio =
   | '1:1'
   | '16:9'
@@ -205,7 +208,7 @@ export type GrokImageAspectRatio =
 export type GrokImageResolution = '1K' | '2K'
 
 export type ImageGenOptions = {
-  aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio
+  aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio | FlareImageAspectRatio
   imageSize?: GeminiImageResolution | GrokImageResolution
   n?: number
   quality?: 'low' | 'medium' | 'high' | 'auto' | 'standard' | 'hd'
@@ -228,7 +231,7 @@ export async function generateImage(
     referenceUrls?: string[]
     maskDataUrl?: string
     size?: ImageGenSize
-    aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio
+    aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio | FlareImageAspectRatio
     imageSize?: GeminiImageResolution | GrokImageResolution
     n?: number
     quality?: ImageGenOptions['quality']
