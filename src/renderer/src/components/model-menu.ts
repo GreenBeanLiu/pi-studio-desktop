@@ -102,6 +102,17 @@ export function buildModelMenuGroups(input: ModelMenuInput): ModelMenuGroup[] {
       const providerFavorites = list.filter((model) =>
         favSet.has(favoriteRouteKey(model.provider, model.id)),
       )
+      // 按模型键的组(T3.1):每个键都是管理台里人工登记的，不是 registry 噪音 —— 全列，收藏置顶。
+      // 按收藏过滤会让迁移前没收藏过的模型(比如 heilovehei 那组靠「最新 8 个」露出来的)整体消失。
+      if (provider === GATEWAY_MODEL_PROVIDER) {
+        const rest = list.filter((model) => !providerFavorites.includes(model))
+        return {
+          type: 'group',
+          label,
+          provider,
+          children: [...providerFavorites, ...rest].map((m) => toEntry(m, false)),
+        }
+      }
       let shown = providerFavorites.length > 0
         ? providerFavorites
         : list.slice(-FALLBACK_PER_PROVIDER).reverse()

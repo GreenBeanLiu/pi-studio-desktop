@@ -53,3 +53,34 @@ describe('route summary in the model tooltip', () => {
     expect(modelRouteSummary({ provider: 'pi-studio', id: 'retired' }, keys)).toBeNull()
   })
 })
+
+describe('model-key group in the switcher', () => {
+  it('lists every registered key with favorites first instead of filtering to favorites', async () => {
+    const { buildModelMenuGroups } = await import('./model-menu')
+    const models = ['deepseek-flash', 'gpt-5.6-sol', 'gpt-6.1-sol', 'gpt-6-luna'].map((id) => ({
+      provider: 'pi-studio',
+      id,
+      contextWindow: 0,
+      reasoning: false,
+    }))
+
+    const [group] = buildModelMenuGroups({
+      models,
+      favoriteModels: [
+        { provider: 'pi-studio', model: 'gpt-5.6-sol' },
+        { provider: 'pi-studio', model: 'deepseek-flash' },
+      ],
+      providerLabels: { 'pi-studio': '模型' },
+      currentModel: null,
+      query: '',
+    })
+
+    expect(group.label).toBe('模型')
+    expect(group.children.map((entry) => entry.label)).toEqual([
+      'deepseek-flash',
+      'gpt-5.6-sol',
+      'gpt-6.1-sol',
+      'gpt-6-luna',
+    ])
+  })
+})
