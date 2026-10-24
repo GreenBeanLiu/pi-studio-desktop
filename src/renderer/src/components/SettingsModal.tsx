@@ -31,14 +31,12 @@ import {
   formatFavoriteModelRoutes,
   parseFavoriteModelRoutes,
 } from '../../../shared/model-route'
-import { formatLlmProfileModels, parseLlmProfileModels } from './llm-profile-models'
 import { buildAvailableModelRoutes } from './available-models'
 import { QRCodeSVG } from 'qrcode.react'
 
 type Settings = SettingsView & { clearCloudImageKey?: boolean }
 
-/** 线路编辑草稿。models 以原始文本持有,保存时才解析 —— 见 llm-profile-models.ts。 */
-type LlmProfileDraft = Omit<LlmProfileWrite, 'models'> & { modelsText: string; create: boolean }
+type LlmProfileDraft = Omit<LlmProfileWrite, 'models'> & { models: string[]; create: boolean }
 
 // 云端线路管理界面已开放:用于维护 provider 分组、同步模型、查看 Cloudflare Agent health。
 // 本地直连已于 2026-08-19 整体退役,不再有可恢复的开关。
@@ -128,14 +126,14 @@ function formatLlmProviderHealth(health: LlmProviderHealth): string {
 const useStyles = createStyles(({ token, css }) => ({
   main: css`
     display: flex;
-    height: 440px;
+    height: min(620px, calc(100dvh - 190px));
     margin: 0 -24px;
     border-top: 1px solid ${token.colorBorderSecondary};
     border-bottom: 1px solid ${token.colorBorderSecondary};
   `,
 
   nav: css`
-    width: 148px;
+    width: 164px;
     flex-shrink: 0;
     border-right: 1px solid ${token.colorBorderSecondary};
     background: ${token.colorBgLayout};
@@ -177,7 +175,7 @@ const useStyles = createStyles(({ token, css }) => ({
     flex: 1;
     min-width: 0;
     overflow-y: auto;
-    padding: 20px 24px;
+    padding: 22px 28px;
   `,
 
   form: css`
@@ -305,7 +303,7 @@ const useStyles = createStyles(({ token, css }) => ({
     border-radius: ${token.borderRadiusLG}px;
     padding: 10px 12px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
     background: ${token.colorBgContainer};
@@ -316,6 +314,45 @@ const useStyles = createStyles(({ token, css }) => ({
     display: flex;
     flex-direction: column;
     gap: 4px;
+  `,
+
+  profileTitle: css`
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  `,
+
+  modelCatalog: css`
+    max-height: 210px;
+    overflow: auto;
+    border: 1px solid ${token.colorBorderSecondary};
+    border-radius: ${token.borderRadius}px;
+    padding: 4px 12px;
+  `,
+
+  modelProvider: css`
+    display: grid;
+    grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid ${token.colorBorderSecondary};
+
+    &:last-child {
+      border-bottom: 0;
+    }
+
+    @media (max-width: 640px) {
+      grid-template-columns: 1fr;
+      gap: 5px;
+    }
+  `,
+
+  modelTags: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
   `,
 
 }))
@@ -540,7 +577,7 @@ export default function SettingsModal({
       base_url: '',
       api_type: 'openai-completions',
       api_key: '',
-      modelsText: '',
+      models: [],
       enabled: true,
       sort_order: llmProfiles.length,
       create: true,
@@ -554,7 +591,7 @@ export default function SettingsModal({
       base_url: profile.base_url ?? '',
       api_type: profile.api_type,
       api_key: '',
-      modelsText: formatLlmProfileModels(profile.models),
+      models: [...profile.models],
       enabled: profile.enabled,
       sort_order: profile.sort_order,
       create: false,
@@ -566,8 +603,7 @@ export default function SettingsModal({
     setLlmProfileSaving(true)
     setLlmProfilesError('')
     try {
-      const { create, modelsText, ...rest } = llmProfileDraft
-      const profile: LlmProfileWrite = { ...rest, models: parseLlmProfileModels(modelsText) }
+      const { create, ...profile } = llmProfileDraft
       const result = await api.llmProfiles.save(
         create ? { profile, create: true } : { profile, create: false },
       )
@@ -614,7 +650,7 @@ export default function SettingsModal({
           message.warning(`实际调用不通，已剔除：${dropped.join('、')}`)
         }
         if (discovered.length > 0) {
-          message.info(`上游新增（未自动添加，可手动填入）：${discovered.join('、')}`)
+          message.info(`上游发现 ${discovered.length} 个模型；可在编辑线路中搜索选择`)
         }
         if (dropped.length === 0 && discovered.length === 0) {
           message.success('模型列表已是最新，全部可用')
@@ -845,7 +881,7 @@ export default function SettingsModal({
       open
       onCancel={onClose}
       title="设置"
-      width={680}
+      width="min(920px, calc(100vw - 24px))"
       centered
       footer={[
         <Button key="cancel" onClick={onClose}>
@@ -995,9 +1031,10 @@ export default function SettingsModal({
                 {llmProfiles.map((profile) => (
                   <div className={styles.profileCard} key={profile.id}>
                     <div className={styles.profileMeta}>
-                      <div>
-                        <strong>{profile.display_name}</strong>{' '}
+                      <div className={styles.profileTitle}>
+                        <strong>{profile.display_name}</strong>
                         <Tag color={profile.enabled ? 'green' : 'default'}>{profile.id}</Tag>
+                        <Tag>{profile.models.length} 个已配置</Tag>
                       </div>
                       <span className={styles.labelHint}>
                         {profile.models.length > 0 ? profile.models.join(' · ') : '尚未配置模型'}
@@ -1026,22 +1063,38 @@ export default function SettingsModal({
               <div className={styles.section}>
                 <span className={styles.label}>
                   全部可用模型
-                  <span className={styles.labelHint}>汇总已启用 provider 配置；云端拉取会补充此列表，不会自动加入切换器</span>
+                  <span className={styles.labelHint}>按线路展示已配置和从上游发现的模型</span>
                 </span>
                 <div className={styles.actionRow}>
                   <Button size="small" onClick={handleFetchModels} loading={fetchingModels}>
-                    从云端拉取模型
+                    同步全部线路
                   </Button>
                   <span className={styles.labelHint}>
                     {allAvailableModels.length} 个模型
                   </span>
                 </div>
-                <Input.TextArea
-                  value={allAvailableModels.join(',')}
-                  readOnly
-                  placeholder="暂无模型；请先配置并启用 provider"
-                  autoSize={{ minRows: 2, maxRows: 4 }}
-                />
+                <div className={styles.modelCatalog}>
+                  {[...new Set(allAvailableModels.map((route) => route.split('::', 1)[0]))].map((provider) => {
+                    const profile = llmProfiles.find((item) => item.id === provider)
+                    const models = allAvailableModels
+                      .filter((route) => route.startsWith(`${provider}::`))
+                      .map((route) => route.slice(provider.length + 2))
+                    return (
+                      <div className={styles.modelProvider} key={provider}>
+                        <span className={styles.profileTitle}>
+                          <strong>{profile?.display_name ?? provider}</strong>
+                          <span className={styles.labelHint}>{models.length}</span>
+                        </span>
+                        <div className={styles.modelTags}>
+                          {models.map((model) => <Tag key={model}>{model}</Tag>)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {allAvailableModels.length === 0 && (
+                    <span className={styles.labelHint}>暂无模型，请先添加并同步线路</span>
+                  )}
+                </div>
                 {modelFetchResult && (
                   <Alert
                     type={modelFetchResult.ok ? 'success' : 'error'}
@@ -1057,11 +1110,17 @@ export default function SettingsModal({
                   实际使用模型
                   <span className={styles.labelHint}>切换器只显示这里列出的模型；使用 provider::model 可区分不同线路的同名模型</span>
                 </span>
-                <Input.TextArea
-                  value={settings.favoriteModels}
-                  onChange={(e) => patch({ favoriteModels: e.target.value })}
-                  placeholder="openai::gpt-5.4, three-a-main::gpt-5.5"
-                  autoSize={{ minRows: 2, maxRows: 4 }}
+                <Select
+                  mode="multiple"
+                  value={parseFavoriteModelRoutes(settings.favoriteModels, 'openai')
+                    .map((route) => `${route.provider}::${route.model}`)}
+                  onChange={(routes: string[]) => patch({ favoriteModels: routes.join(', ') })}
+                  options={allAvailableModels.map((route) => ({ value: route, label: route }))}
+                  optionFilterProp="label"
+                  showSearch
+                  allowClear
+                  maxTagCount="responsive"
+                  placeholder="搜索并选择要放进模型切换器的模型"
                 />
               </div>
             </div>
@@ -1614,6 +1673,7 @@ export default function SettingsModal({
       <Modal
         open={!!llmProfileDraft}
         title={llmProfileDraft?.create ? '添加模型线路' : '编辑模型线路'}
+        width="min(620px, calc(100vw - 24px))"
         onCancel={() => setLlmProfileDraft(null)}
         onOk={saveLlmProfile}
         okText="保存线路"
@@ -1653,14 +1713,31 @@ export default function SettingsModal({
               <Input.Password value={llmProfileDraft.api_key} onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, api_key: e.target.value }))} placeholder="sk-…" />
             </div>
             <div className={styles.section}>
-              <span className={styles.label}>可用模型</span>
-              <Input.TextArea
-                value={llmProfileDraft.modelsText}
-                onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, modelsText: e.target.value }))}
-                placeholder={'grok-4\ngrok-4-fast'}
-                autoSize={{ minRows: 3, maxRows: 7 }}
+              <div className={styles.actionRow}>
+                <span className={styles.label}>线路模型</span>
+                <Button
+                  size="small"
+                  icon={<RefreshCw size={13} />}
+                  disabled={llmProfileDraft.create}
+                  loading={llmProfilesLoading}
+                  onClick={() => void refreshLlmModels(llmProfileDraft.id)}
+                >
+                  刷新上游模型
+                </Button>
+              </div>
+              <Select
+                mode="tags"
+                value={llmProfileDraft.models}
+                onChange={(models: string[]) => setLlmProfileDraft((draft) => draft && ({ ...draft, models }))}
+                options={allAvailableModels
+                  .filter((route) => route.startsWith(`${llmProfileDraft.id}::`))
+                  .map((route) => ({ value: route.slice(llmProfileDraft.id.length + 2) }))}
+                optionFilterProp="value"
+                showSearch
+                tokenSeparators={[',', '\n']}
+                placeholder="搜索上游已发现模型，或输入模型 ID 添加"
               />
-              <span className={styles.labelHint}>每行一个；保存后也可以点击线路右侧刷新按钮从上游 /models 自动读取。</span>
+              <span className={styles.labelHint}>选择后保存到线路；新线路先保存，再刷新上游模型。</span>
             </div>
             <div className={styles.section}>
               <span className={styles.switchItem}>
