@@ -341,6 +341,7 @@ export default function SettingsModal({
   const [piVersion, setPiVersion] = useState('')
   const [fetchingModels, setFetchingModels] = useState(false)
   const [modelFetchResult, setModelFetchResult] = useState<ProviderModelListResult | null>(null)
+  const [cloudCatalogModels, setCloudCatalogModels] = useState<string[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [channelDraft, setChannelDraft] = useState<Channel | null>(null)
   const [channelTesting, setChannelTesting] = useState<string | null>(null)
@@ -791,7 +792,7 @@ export default function SettingsModal({
       })
       setModelFetchResult(result)
       if (result.ok) {
-        setSettings((s) => ({ ...s, favoriteModels: result.models.join(',') }))
+        setCloudCatalogModels(result.models)
       }
     } catch (err) {
       setModelFetchResult({
@@ -803,6 +804,12 @@ export default function SettingsModal({
       setFetchingModels(false)
     }
   }
+
+  const allAvailableModels = [...new Set([
+    ...llmProfiles.filter((profile) => profile.enabled)
+      .flatMap((profile) => profile.models.map((model) => `${profile.id}::${model}`)),
+    ...cloudCatalogModels,
+  ])]
 
   return (
     <Modal
@@ -989,21 +996,21 @@ export default function SettingsModal({
 
               <div className={styles.section}>
                 <span className={styles.label}>
-                  模型切换列表
-                  <span className={styles.labelHint}>使用 provider::model，避免不同线路的同名模型串线；留空显示每家最新 8 个</span>
+                  全部可用模型
+                  <span className={styles.labelHint}>汇总已启用 provider 配置；云端拉取会补充此列表，不会自动加入切换器</span>
                 </span>
                 <div className={styles.actionRow}>
                   <Button size="small" onClick={handleFetchModels} loading={fetchingModels}>
                     从云端拉取模型
                   </Button>
                   <span className={styles.labelHint}>
-                    读取 Pi Studio 云端已启用的模型线路。
+                    {allAvailableModels.length} 个模型
                   </span>
                 </div>
                 <Input.TextArea
-                  value={settings.favoriteModels}
-                  onChange={(e) => patch({ favoriteModels: e.target.value })}
-                  placeholder="openai::gpt-5.4, three-a-main::gpt-5.5"
+                  value={allAvailableModels.join(',')}
+                  readOnly
+                  placeholder="暂无模型；请先配置并启用 provider"
                   autoSize={{ minRows: 2, maxRows: 4 }}
                 />
                 {modelFetchResult && (
@@ -1014,6 +1021,19 @@ export default function SettingsModal({
                     description={modelFetchResult.ok ? undefined : modelFetchResult.details}
                   />
                 )}
+              </div>
+
+              <div className={styles.section}>
+                <span className={styles.label}>
+                  实际使用模型
+                  <span className={styles.labelHint}>切换器只显示这里列出的模型；使用 provider::model 可区分不同线路的同名模型</span>
+                </span>
+                <Input.TextArea
+                  value={settings.favoriteModels}
+                  onChange={(e) => patch({ favoriteModels: e.target.value })}
+                  placeholder="openai::gpt-5.4, three-a-main::gpt-5.5"
+                  autoSize={{ minRows: 2, maxRows: 4 }}
+                />
               </div>
             </div>
           )}
