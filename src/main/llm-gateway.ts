@@ -1,13 +1,13 @@
 import type {
-  LlmModelMetadata,
   LlmProfileWrite,
   LlmProviderHealth,
   LlmProviderProfile,
 } from '../shared/contracts'
 import { cloudFetch } from './cloud-fetch'
-import deepSeekCatalog from '../shared/contracts/model-catalog-v1-deepseek.json'
+import { buildGatewayModel, type PiCustomModelConfig } from '../shared/gateway-model'
 
 export type { LlmProfileWrite, LlmProviderHealth, LlmProviderProfile } from '../shared/contracts'
+export { isGatewayReasoningModel, type PiCustomModelConfig } from '../shared/gateway-model'
 
 export type LlmCatalog = { providers: LlmProviderProfile[] }
 
@@ -23,78 +23,11 @@ export function listEnabledLlmRoutes(catalog: LlmCatalog): string[] {
     )
 }
 
-export type PiCustomModelConfig = {
-  id: string
-  name: string
-} & Omit<LlmModelMetadata, 'name'>
-
 export type PiCustomProviderConfig = {
   baseUrl: string
   api: 'openai-completions'
   apiKey: '$PI_STUDIO_LLM_KEY'
   models: PiCustomModelConfig[]
-}
-
-/** 云端 catalog 可下发模型能力；这里的模型名判断只作为旧 catalog 的兜底。 */
-export function isGatewayReasoningModel(id: string): boolean {
-  const s = id.toLowerCase()
-  if (/non-reasoning|composer|fast|build|image|embed|whisper|tts/.test(s)) return false
-  return /grok-4|grok-[5-9]|gpt-5|gpt-[6-9]|^o[1-9]|reasoning|deepseek-(?:r|v4)|glm.*think|qwq/.test(s)
-}
-
-function modelFromMetadata(id: string, metadata: LlmModelMetadata): PiCustomModelConfig {
-  const { name, ...rest } = metadata
-  return { id, name: name?.trim() || id, ...rest }
-}
-
-/**
- * model-catalog/v1 的 DeepSeek 种子(逐字节镜像自 pi-studio-control-plane
- * docs/contracts/fixtures/model-catalog-v1-deepseek.json)。运行时的真源是云端 profile 的
- * model_metadata(`/llm/catalog`),这份只在 catalog 没给 metadata 时兜底;价格不再写在代码里。
- */
-function deepSeekSeed(id: string): (typeof deepSeekCatalog.models)[keyof typeof deepSeekCatalog.models] | null {
-  const wanted = id.toLowerCase()
-  for (const [model, entry] of Object.entries(deepSeekCatalog.models)) {
-    if (model === wanted || entry.aliases.some((alias) => alias.toLowerCase() === wanted)) return entry
-  }
-  return null
-}
-
-function buildGatewayModel(profile: LlmProviderProfile, id: string): PiCustomModelConfig {
-  const metadata = profile.model_metadata?.[id]
-  if (metadata) return modelFromMetadata(id, metadata)
-
-  // 种子先于名字启发式:deepseek-flash 这个现名不长 "v4" 字样,靠正则猜会把它当成非推理模型。
-  const seed = profile.id === 'deepseek' ? deepSeekSeed(id) : null
-  if (seed) {
-    const isPro = id.toLowerCase() === 'deepseek-v4-pro'
-    return {
-      id,
-      name: isPro ? 'DeepSeek V4 Pro' : 'DeepSeek V4 Flash',
-      reasoning: seed.reasoning,
-      input: ['text'],
-      cost: { ...seed.cost },
-      contextWindow: seed.contextWindow,
-      maxTokens: seed.maxTokens,
-      thinkingLevelMap: {
-        minimal: 'low',
-        low: 'low',
-        medium: 'high',
-        high: 'high',
-        xhigh: 'xhigh',
-        max: 'max',
-      },
-      compat: {
-        supportsDeveloperRole: false,
-        supportsReasoningEffort: true,
-        requiresReasoningContentOnAssistantMessages: true,
-        thinkingFormat: 'deepseek',
-      },
-    }
-  }
-  const reasoning = isGatewayReasoningModel(id)
-  if (!reasoning) return { id, name: id }
-  return { id, name: id, reasoning: true, compat: { supportsReasoningEffort: true } }
 }
 
 export function buildGatewayProviderConfigs(

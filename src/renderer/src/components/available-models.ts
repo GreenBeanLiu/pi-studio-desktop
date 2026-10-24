@@ -1,5 +1,6 @@
 import type { LlmProviderProfile } from '../../../shared/contracts'
 import type { ModelInfo } from '../../../shared/ipc/contract'
+import { buildGatewayModel, PI_CUSTOM_MODEL_DEFAULTS } from '../../../shared/gateway-model'
 
 export function buildAvailableModelRoutes(
   profiles: readonly LlmProviderProfile[],
@@ -34,16 +35,18 @@ export function mergeAvailableModelInfo(
     for (const id of profile.models) {
       const key = `${profile.id}::${id}`
       if (unavailable.has(id) || merged.has(key)) continue
-      const metadata = profile.model_metadata?.[id]
+      // 和主进程写进 Pi models.json 的是同一份推断(云端 metadata → DeepSeek 种子 → 名字
+      // 启发式),缺的字段再按 Pi 自己的默认值补，切过去之后选择器显示不会变。
+      const model = buildGatewayModel(profile, id)
       merged.set(key, {
         provider: profile.id,
         id,
-        name: metadata?.name,
-        contextWindow: metadata?.contextWindow ?? 0,
-        maxTokens: metadata?.maxTokens,
-        reasoning: metadata?.reasoning ?? false,
-        input: metadata?.input,
-        cost: metadata?.cost,
+        name: model.name,
+        contextWindow: model.contextWindow ?? PI_CUSTOM_MODEL_DEFAULTS.contextWindow,
+        maxTokens: model.maxTokens ?? PI_CUSTOM_MODEL_DEFAULTS.maxTokens,
+        reasoning: model.reasoning ?? PI_CUSTOM_MODEL_DEFAULTS.reasoning,
+        input: model.input ?? [...PI_CUSTOM_MODEL_DEFAULTS.input],
+        cost: model.cost,
         baseUrl: profile.base_url,
         api: profile.api_type,
       })
