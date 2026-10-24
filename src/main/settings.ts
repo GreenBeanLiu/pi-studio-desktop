@@ -3,8 +3,11 @@ import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import {
   buildGatewayProviderConfigs,
+  type GatewayModelEntry,
   type LlmProviderProfile,
 } from './llm-gateway'
+import { appendAppLog } from './app-log'
+import { migrateRoutesToModelKeys } from '../shared/model-key-migration'
 import {
   parseFavoriteModelRoutes,
   type ModelRoute,
@@ -41,6 +44,7 @@ const DEFAULTS: SettingsData = {
 const MAX_RECENT_WORKSPACES = 10
 const DEEPSEEK_FAVORITES_MIGRATION_KEY = 'deepSeekFavoriteModelsMigrated'
 const DIRECT_RETIREMENT_MIGRATION_KEY = 'directProviderRetired'
+const MODEL_KEY_MIGRATION_KEY = 'modelKeysMigrated'
 /** 退役前那个唯一的直连 provider;搬迁读老配置时的兜底值。 */
 const DEFAULT_DIRECT_PROVIDER = 'openai'
 
@@ -255,6 +259,42 @@ export function migrateDirectProviderRetirement(gatewayProfiles: LlmProviderProf
   return favoritesChanged || selectedChanged
 }
 
+/**
+ * 收藏和当前选中从 `线路::模型` 搬到 `pi-studio::模型键` 的一次性搬迁(T3.2)。
+ * 要等网关真给出模型键目录才跑 —— 空目录(老网关)时不打标记，下次再试。
+ */
+export function migrateToModelKeys(models: GatewayModelEntry[]): boolean {
+  const raw = readRaw()
+  if (raw[MODEL_KEY_MIGRATION_KEY] === true) return false
+  if (models.length === 0) return false
+
+  const currentFavorites =
+    typeof raw.favoriteModels === 'string' ? raw.favoriteModels : DEFAULTS.favoriteModels
+  const selected = raw.selectedModelRoute as Partial<ModelRoute> | undefined
+  const result = migrateRoutesToModelKeys({
+    favoriteModels: currentFavorites,
+    legacyProvider: (raw.provider as string)?.trim() || DEFAULT_DIRECT_PROVIDER,
+    selected:
+      typeof selected?.provider === 'string' && typeof selected?.model === 'string'
+        ? { provider: selected.provider.trim(), model: selected.model.trim() }
+        : null,
+    models,
+  })
+
+  const favoritesChanged = result.favoriteModels !== currentFavorites
+  const selectedChanged = JSON.stringify(result.selected) !== JSON.stringify(raw.selectedModelRoute ?? null)
+  raw[MODEL_KEY_MIGRATION_KEY] = true
+  if (favoritesChanged) raw.favoriteModels = result.favoriteModels
+  if (selectedChanged && result.selected) raw.selectedModelRoute = result.selected
+  writeRaw(raw)
+  appendAppLog('info', 'llm.catalog', 'Migrated favorites to model keys', {
+    favorites: result.favoriteModels,
+    selected: result.selected,
+    unmapped: result.unmapped.map((route) => `${route.provider}::${route.model}`),
+  })
+  return favoritesChanged || selectedChanged
+}
+
 export function removeRecentWorkspace(path: string): Workspace[] {
   const next = loadSettings().recentWorkspaces.filter((w) => w.path !== path)
   const raw = readRaw()
@@ -285,13 +325,14 @@ export function agentConfigDir(): string {
 export function writeModelsOverride(
   gatewayRelay: string,
   gatewayProfiles: LlmProviderProfile[],
+  gatewayModels: GatewayModelEntry[] = [],
 ): void {
   const dir = agentConfigDir()
   mkdirSync(dir, { recursive: true })
   const modelsPath = join(dir, 'models.json')
 
   const providers: Record<string, unknown> = gatewayRelay.trim()
-    ? buildGatewayProviderConfigs(gatewayRelay, gatewayProfiles)
+    ? buildGatewayProviderConfigs(gatewayRelay, gatewayProfiles, gatewayModels)
     : {}
 
   writeFileSync(modelsPath, JSON.stringify({ providers }, null, 2), 'utf-8')

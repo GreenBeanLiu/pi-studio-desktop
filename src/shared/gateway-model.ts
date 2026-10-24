@@ -1,4 +1,4 @@
-import type { LlmModelMetadata, LlmProviderProfile } from './contracts'
+import type { GatewayModelEntry, LlmModelMetadata, LlmProviderProfile } from './contracts'
 import deepSeekCatalog from './contracts/model-catalog-v1-deepseek.json'
 
 // 主进程(写 Pi 的 models.json)和渲染层(运行时快照没跟上时补模型列表)共用同一份
@@ -34,12 +34,34 @@ function deepSeekSeed(id: string): (typeof deepSeekCatalog.models)[keyof typeof 
   return null
 }
 
+/** DeepSeek 别名对应的现名(`deepseek-v4-flash` → `deepseek-flash`);不是 DeepSeek 模型返回 null。 */
+export function deepSeekCanonicalModel(id: string): string | null {
+  const wanted = id.toLowerCase()
+  for (const [model, entry] of Object.entries(deepSeekCatalog.models)) {
+    if (model === wanted || entry.aliases.some((alias) => alias.toLowerCase() === wanted)) return model
+  }
+  return null
+}
+
 export function buildGatewayModel(profile: LlmProviderProfile, id: string): PiCustomModelConfig {
-  const metadata = profile.model_metadata?.[id]
+  return buildModelConfig(id, profile.model_metadata?.[id], profile.id === 'deepseek')
+}
+
+/** 按模型键注册(T3.1):能力只认模型键自己的 metadata,缺了照同一套兜底。DeepSeek 种子按名字/别名认。 */
+export function buildModelKeyConfig(entry: GatewayModelEntry): PiCustomModelConfig {
+  const metadata = entry.metadata && Object.keys(entry.metadata).length > 0 ? entry.metadata : undefined
+  return buildModelConfig(entry.key, metadata, true)
+}
+
+function buildModelConfig(
+  id: string,
+  metadata: LlmModelMetadata | undefined,
+  allowDeepSeekSeed: boolean,
+): PiCustomModelConfig {
   if (metadata) return modelFromMetadata(id, metadata)
 
   // 种子先于名字启发式:deepseek-flash 这个现名不长 "v4" 字样,靠正则猜会把它当成非推理模型。
-  const seed = profile.id === 'deepseek' ? deepSeekSeed(id) : null
+  const seed = allowDeepSeekSeed ? deepSeekSeed(id) : null
   if (seed) {
     const isPro = id.toLowerCase() === 'deepseek-v4-pro'
     return {

@@ -93,6 +93,10 @@ function dependencies(
     saveCachedProfiles: vi.fn(),
     migrateOfficialDeepSeekFavorites: vi.fn(() => false),
     migrateDirectProviderRetirement: vi.fn(() => false),
+    fetchModels: vi.fn(async () => []),
+    loadCachedModels: vi.fn(() => []),
+    saveCachedModels: vi.fn(),
+    migrateToModelKeys: vi.fn(() => false),
     ...overrides,
   }
 }
@@ -235,6 +239,7 @@ describe('model catalog coordination', () => {
 
     await expect(catalog.prepareRuntime()).resolves.toEqual({
       profiles: [],
+      models: [],
       chatToken: '',
       imageToken: 'image-token',
       warning: 'token unavailable',
@@ -255,6 +260,7 @@ describe('model catalog coordination', () => {
 
     await expect(catalog.prepareRuntime()).resolves.toEqual({
       profiles: [profile],
+      models: [],
       chatToken: 'chat-token',
       imageToken: 'image-token',
       warning: 'catalog offline',
@@ -271,6 +277,7 @@ describe('model catalog coordination', () => {
 
     await expect(catalog.prepareRuntime()).resolves.toEqual({
       profiles: [profile],
+      models: [],
       chatToken: 'chat-token',
       imageToken: '',
       warning: 'image agent token: imagegen down',
@@ -284,7 +291,7 @@ describe('model catalog coordination', () => {
     const catalog = new ModelCatalogCoordinator(dependencies())
 
     await expect(catalog.loadProviderLabels()).resolves.toEqual({
-      providerLabels: { 'three-a-main': '3A Main' },
+      providerLabels: { 'three-a-main': '3A Main', 'pi-studio': '模型' },
     })
   })
 
@@ -342,7 +349,7 @@ describe('model catalog coordination', () => {
     )
 
     await expect(catalog.loadProviderLabels()).resolves.toEqual({
-      providerLabels: { 'three-a-main': '3A Main' },
+      providerLabels: { 'three-a-main': '3A Main', 'pi-studio': '模型' },
     })
   })
 
@@ -357,7 +364,7 @@ describe('model catalog coordination', () => {
     })
     const catalog = new ModelCatalogCoordinator(deps)
 
-    await expect(catalog.sync()).resolves.toEqual({ profiles: [], warning: 'offline' })
+    await expect(catalog.sync()).resolves.toEqual({ profiles: [], models: [], warning: 'offline' })
     expect(deps.projectModels).toHaveBeenCalledWith(
       expect.objectContaining({ gatewayProfiles: [] }),
     )
@@ -380,7 +387,7 @@ describe('model catalog coordination', () => {
     })
     const catalog = new ModelCatalogCoordinator(deps)
 
-    await expect(catalog.sync()).resolves.toEqual({ profiles: [metadataProfile] })
+    await expect(catalog.sync()).resolves.toEqual({ profiles: [metadataProfile], models: [] })
     expect(deps.saveCachedProfiles).toHaveBeenCalledWith([metadataProfile])
   })
 })

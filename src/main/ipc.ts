@@ -396,6 +396,13 @@ export function registerIpcHandlers(): void {
       return { error: (err as Error).message ?? String(err) }
     }
   })
+  ipcMain.handle('modelCatalog:listModels', () => {
+    try {
+      return { ok: true, models: modelCatalog.listCachedModels() }
+    } catch (err) {
+      return { error: (err as Error).message ?? String(err) }
+    }
+  })
   ipcMain.handle('modelCatalog:verifyDiscoveredModels', async (_event, id: unknown) => {
     try {
       return { ok: true, ...(await modelCatalog.verifyDiscoveredModels(parseLlmProfileId(id))) }

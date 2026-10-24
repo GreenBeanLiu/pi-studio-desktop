@@ -11,6 +11,7 @@ import type {
   SessionInfo,
 } from '../shared/ipc/contract'
 import { acpSessionKey, parseAcpSessionKey } from '../shared/acp-session-key'
+import { visibleSwitcherModels } from '../shared/model-route'
 import { loadRpcClient } from './pi-process'
 import type { BlockingExtensionUiMethod } from './extension-ui-ownership'
 import type { AgentJob, AgentJobSnapshot } from './agent-job-registry'
@@ -642,7 +643,15 @@ class PiClientManager implements AgentPoolHost, EventProjectionHost {
       // 目录拉不到只是少一组外部 agent,不该让整个模型选择器报错。
       appendAppLog('warn', 'acp.registry', 'Failed to load the ACP agent registry', normalizeError(error))
     }
-    return mergeModelEntries(this.lastPiModels, acp)
+    let current: { provider: string; id: string } | null = null
+    if (entry.pi) {
+      try {
+        current = (await entry.pi.getState())?.model ?? null
+      } catch {
+        // 拿不到当前模型只影响「旧线路正在用时也显示」这一条，不影响列表本身。
+      }
+    }
+    return mergeModelEntries(visibleSwitcherModels(this.lastPiModels, current), acp)
   }
 
   /**

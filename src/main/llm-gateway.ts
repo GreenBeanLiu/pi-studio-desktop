@@ -1,12 +1,14 @@
 import type {
+  GatewayModelEntry,
   LlmProfileWrite,
   LlmProviderHealth,
   LlmProviderProfile,
 } from '../shared/contracts'
 import { cloudFetch } from './cloud-fetch'
-import { buildGatewayModel, type PiCustomModelConfig } from '../shared/gateway-model'
+import { buildGatewayModel, buildModelKeyConfig, type PiCustomModelConfig } from '../shared/gateway-model'
+import { GATEWAY_MODEL_PROVIDER } from '../shared/model-route'
 
-export type { LlmProfileWrite, LlmProviderHealth, LlmProviderProfile } from '../shared/contracts'
+export type { GatewayModelEntry, LlmProfileWrite, LlmProviderHealth, LlmProviderProfile } from '../shared/contracts'
 export { isGatewayReasoningModel, type PiCustomModelConfig } from '../shared/gateway-model'
 
 export type LlmCatalog = { providers: LlmProviderProfile[] }
@@ -33,10 +35,25 @@ export type PiCustomProviderConfig = {
 export function buildGatewayProviderConfigs(
   relay: string,
   profiles: LlmProviderProfile[],
+  models: GatewayModelEntry[] = [],
 ): Record<string, PiCustomProviderConfig> {
   const root = relay.trim().replace(/\/+$/, '')
-  return Object.fromEntries(
-    profiles
+  // 按模型键的 provider 放最前;旧的按线路 provider 留着给旧会话恢复用(选择器里不显示)。
+  const modelKeyProvider: Array<[string, PiCustomProviderConfig]> =
+    models.length > 0
+      ? [[
+          GATEWAY_MODEL_PROVIDER,
+          {
+            baseUrl: `${root}/llm/v1`,
+            api: 'openai-completions' as const,
+            apiKey: '$PI_STUDIO_LLM_KEY' as const,
+            models: models.map(buildModelKeyConfig),
+          },
+        ]]
+      : []
+  return Object.fromEntries([
+    ...modelKeyProvider,
+    ...profiles
       .filter((profile) => profile.enabled && profile.models.length > 0)
       .sort((a, b) => a.sort_order - b.sort_order || a.display_name.localeCompare(b.display_name))
       .map((profile) => [
@@ -47,8 +64,8 @@ export function buildGatewayProviderConfigs(
           apiKey: '$PI_STUDIO_LLM_KEY' as const,
           models: profile.models.map((id) => buildGatewayModel(profile, id)),
         },
-      ]),
-  )
+      ] as [string, PiCustomProviderConfig]),
+  ])
 }
 
 async function gatewayJson<T>(
@@ -83,6 +100,11 @@ async function gatewayJson<T>(
 
 export function fetchLlmCatalog(relay: string, appKey: string): Promise<LlmCatalog> {
   return gatewayJson(relay, appKey, '/llm/catalog')
+}
+
+/** 按模型键的目录(llm-models/v1,网关 T1.2)。老网关没有这个口时返回 404,调用方当空列表处理。 */
+export function fetchLlmModels(relay: string, appKey: string): Promise<{ contract: string; models: GatewayModelEntry[] }> {
+  return gatewayJson(relay, appKey, '/llm/models')
 }
 
 export function createLlmSessionToken(

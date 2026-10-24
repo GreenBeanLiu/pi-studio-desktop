@@ -1,6 +1,7 @@
 import type { ModelInfo } from '../../../shared/ipc/contract'
 import {
   ACP_PROVIDER_LABEL,
+  GATEWAY_MODEL_PROVIDER,
   favoriteRouteKey,
   isAcpModelRoute,
   type ModelRoute,
@@ -145,4 +146,19 @@ export function buildModelChip(input: {
     sub: input.backendModel ? (input.backendModel.name ?? input.backendModel.id) : undefined,
     badge: input.thinkingEnabled ? input.thinkingLabel : undefined,
   }
+}
+
+/**
+ * 按模型键的条目走哪几条线路，给悬浮信息用:「heilovehei → Cloudflare Agent(故障时按顺序切换)」。
+ * 不是模型键 provider 的条目、或目录里没有它，返回 null(调用方照旧显示服务商和接入点)。
+ */
+export function modelRouteSummary(
+  model: Pick<ModelInfo, 'provider' | 'id'>,
+  gatewayModels: ReadonlyArray<{ key: string; routes: ReadonlyArray<{ display_name: string }> }>,
+): string | null {
+  if (model.provider !== GATEWAY_MODEL_PROVIDER) return null
+  const entry = gatewayModels.find((item) => item.key === model.id)
+  if (!entry || entry.routes.length === 0) return null
+  const names = entry.routes.map((route) => route.display_name)
+  return names.length > 1 ? `${names.join(' → ')}(故障时按顺序切换)` : names[0]
 }
