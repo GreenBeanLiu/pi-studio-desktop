@@ -37,6 +37,7 @@ export async function prepareAgentRuntime(cwd?: string): Promise<AgentRuntimeCon
   const selectedRoute = selectRuntimeModelRoute({
     selected: settings.selectedModelRoute,
     gatewayProfiles,
+    gatewayModels: catalog.models,
   })
 
   if (!selectedRoute) {

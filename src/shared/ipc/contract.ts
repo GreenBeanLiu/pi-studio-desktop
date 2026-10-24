@@ -20,6 +20,7 @@ import type {
   ToolCall,
 } from '@earendil-works/pi-ai/compat'
 import type {
+  GatewayModelEntry,
   LlmProfileSavePayload,
   LlmProviderHealth,
   LlmProviderProfile,
@@ -30,6 +31,7 @@ import type {
 } from '../contracts'
 
 export type {
+  GatewayModelEntry,
   LlmProfileWrite,
   LlmProfileSavePayload,
   LlmProviderHealth,
@@ -110,6 +112,8 @@ export type DesktopApi = {
   }
   modelCatalog: {
     loadProviderLabels: () => Promise<{ ok: true; view: ModelCatalogView } | { error: string }>
+    /** 按模型键的目录(T3.1),主进程最近一次同步的缓存。 */
+    listModels: () => Promise<{ ok: true; models: GatewayModelEntry[] } | { error: string }>
     verifyDiscoveredModels: (id: string) => Promise<
       | {
           ok: true

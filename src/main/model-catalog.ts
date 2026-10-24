@@ -7,11 +7,13 @@ import {
   createLlmSessionToken,
   deleteLlmProfile,
   fetchLlmCatalog,
+  fetchLlmModels,
   fetchLlmProviderHealth,
   listLlmProfiles,
   refreshLlmProfileModels,
   probeLlmModel,
   updateLlmProfile,
+  type GatewayModelEntry,
   type LlmCatalog,
   type LlmProviderHealth,
   type LlmProviderProfile,
@@ -21,18 +23,23 @@ import {
   migrateOfficialDeepSeekFavorites,
   writeModelsOverride,
   migrateDirectProviderRetirement,
+  migrateToModelKeys,
 } from './settings'
 import type { LlmModelMetadata, LlmProfileSavePayload, ModelCatalogView } from '../shared/contracts'
 import { DEEPSEEK_PROFILE_ID } from '../shared/deepseek-profile'
+import { GATEWAY_MODEL_PROVIDER, GATEWAY_MODEL_PROVIDER_LABEL } from '../shared/model-route'
 
 type ModelProjection = {
   gatewayRelay: string
   gatewayProfiles: LlmProviderProfile[]
+  gatewayModels: GatewayModelEntry[]
 }
 
 export type ModelCatalogDependencies = {
   getConnection: () => CloudConnection
   fetchCatalog: (relay: string, appKey: string) => Promise<LlmCatalog>
+  /** 按模型键的目录(T3.1)。老网关没有这个口 —— 失败时退到缓存，再不行就是空表(只剩旧的按线路 provider)。 */
+  fetchModels: (relay: string, appKey: string) => Promise<GatewayModelEntry[]>
   createSessionToken: typeof createLlmSessionToken
   createImageAgentToken: typeof createImageAgentToken
   listProfiles: typeof listLlmProfiles
@@ -45,12 +52,16 @@ export type ModelCatalogDependencies = {
   projectModels: (projection: ModelProjection) => void
   loadCachedProfiles: () => LlmProviderProfile[]
   saveCachedProfiles: (profiles: LlmProviderProfile[]) => void
+  loadCachedModels: () => GatewayModelEntry[]
+  saveCachedModels: (models: GatewayModelEntry[]) => void
+  migrateToModelKeys: (models: GatewayModelEntry[]) => boolean
   migrateOfficialDeepSeekFavorites: (profiles: LlmProviderProfile[]) => boolean
   migrateDirectProviderRetirement: (profiles: LlmProviderProfile[]) => boolean
 }
 
 export type ModelCatalogSync = {
   profiles: LlmProviderProfile[]
+  models: GatewayModelEntry[]
   warning?: string
 }
 
@@ -66,9 +77,10 @@ function errorMessage(error: unknown): string {
 
 function providerLabelView(profiles: LlmProviderProfile[]): ModelCatalogView {
   return {
-    providerLabels: Object.fromEntries(
-      profiles.map((profile) => [profile.id, profile.display_name]),
-    ),
+    providerLabels: {
+      ...Object.fromEntries(profiles.map((profile) => [profile.id, profile.display_name])),
+      [GATEWAY_MODEL_PROVIDER]: GATEWAY_MODEL_PROVIDER_LABEL,
+    },
   }
 }
 
@@ -120,6 +132,46 @@ function validProfiles(values: unknown[]): LlmProviderProfile[] {
   return values.filter(isLlmProviderProfile)
 }
 
+function isGatewayModelEntry(value: unknown): value is GatewayModelEntry {
+  if (!value || typeof value !== 'object') return false
+  const entry = value as Partial<GatewayModelEntry>
+  return (
+    typeof entry.key === 'string' &&
+    !!entry.key.trim() &&
+    !entry.key.includes('::') &&
+    validMetadataEntry(entry.metadata ?? {}) &&
+    Array.isArray(entry.routes) &&
+    entry.routes.length > 0 &&
+    entry.routes.every(
+      (route) => typeof route?.profile_id === 'string' && typeof route?.display_name === 'string',
+    )
+  )
+}
+
+export function validGatewayModels(values: unknown): GatewayModelEntry[] {
+  if (!Array.isArray(values)) return []
+  return values.filter(isGatewayModelEntry).map((entry) => ({ ...entry, metadata: entry.metadata ?? {} }))
+}
+
+function modelCachePath(): string {
+  return join(agentConfigDir(), 'model-keys-cache.json')
+}
+
+function loadModelCache(): GatewayModelEntry[] {
+  const path = modelCachePath()
+  if (!existsSync(path)) return []
+  try {
+    return validGatewayModels((JSON.parse(readFileSync(path, 'utf-8')) as { models?: unknown }).models)
+  } catch {
+    return []
+  }
+}
+
+function saveModelCache(models: GatewayModelEntry[]): void {
+  mkdirSync(agentConfigDir(), { recursive: true })
+  writeFileSync(modelCachePath(), JSON.stringify({ models }, null, 2), 'utf-8')
+}
+
 function loadCatalogCache(): LlmProviderProfile[] {
   const path = catalogCachePath()
   if (!existsSync(path)) return []
@@ -142,6 +194,7 @@ export function defaultModelCatalogDependencies(): ModelCatalogDependencies {
   return {
     getConnection: getCloudConnection,
     fetchCatalog: fetchLlmCatalog,
+    fetchModels: async (relay, appKey) => validGatewayModels((await fetchLlmModels(relay, appKey)).models),
     createSessionToken: createLlmSessionToken,
     createImageAgentToken,
     listProfiles: listLlmProfiles,
@@ -152,9 +205,12 @@ export function defaultModelCatalogDependencies(): ModelCatalogDependencies {
     probeModel: probeLlmModel,
     providerHealth: fetchLlmProviderHealth,
     projectModels: (projection) =>
-      writeModelsOverride(projection.gatewayRelay, projection.gatewayProfiles),
+      writeModelsOverride(projection.gatewayRelay, projection.gatewayProfiles, projection.gatewayModels),
     loadCachedProfiles: loadCatalogCache,
     saveCachedProfiles: saveCatalogCache,
+    loadCachedModels: loadModelCache,
+    saveCachedModels: saveModelCache,
+    migrateToModelKeys,
     migrateOfficialDeepSeekFavorites: (profiles) => {
       const deepSeek = profiles.find(
         (profile) =>
@@ -184,21 +240,47 @@ export class ModelCatalogCoordinator {
     if (deepSeekChanged || retirementChanged) this.onChanged()
   }
 
-  private project(connection: CloudConnection, gatewayProfiles: LlmProviderProfile[]): void {
+  private project(
+    connection: CloudConnection,
+    gatewayProfiles: LlmProviderProfile[],
+    gatewayModels: GatewayModelEntry[],
+  ): void {
     this.dependencies.projectModels({
       gatewayRelay: connection.relay,
       gatewayProfiles,
+      gatewayModels,
     })
+  }
+
+  /** 模型键目录拿不到不拦整条同步:退到缓存;老网关没有这个口就一直是空表。 */
+  private async fetchAndCacheModels(
+    connection: Extract<CloudConnection, { available: true }>,
+  ): Promise<GatewayModelEntry[]> {
+    try {
+      const models = await this.dependencies.fetchModels(connection.relay, connection.key)
+      this.dependencies.saveCachedModels(models)
+      return models
+    } catch {
+      return validGatewayModels(this.dependencies.loadCachedModels())
+    }
+  }
+
+  private migrateModelKeys(models: GatewayModelEntry[]): void {
+    if (!this.onChanged || models.length === 0) return
+    if (this.dependencies.migrateToModelKeys(models)) this.onChanged()
   }
 
   private async loadAndProject(
     connection: Extract<CloudConnection, { available: true }>,
-  ): Promise<LlmProviderProfile[]> {
-    const profiles = (await this.fetchAndCacheProfiles(connection)).filter(
-      (profile) => profile.enabled && profile.models.length > 0,
-    )
-    this.project(connection, profiles)
-    return profiles
+  ): Promise<{ profiles: LlmProviderProfile[]; models: GatewayModelEntry[] }> {
+    const [allProfiles, models] = await Promise.all([
+      this.fetchAndCacheProfiles(connection),
+      this.fetchAndCacheModels(connection),
+    ])
+    const profiles = allProfiles.filter((profile) => profile.enabled && profile.models.length > 0)
+    this.migrateModelKeys(models)
+    this.project(connection, profiles, models)
+    return { profiles, models }
   }
 
   private async fetchAndCacheProfiles(
@@ -211,25 +293,29 @@ export class ModelCatalogCoordinator {
     return profiles
   }
 
-  private loadCachedAndProject(connection: CloudConnection): LlmProviderProfile[] {
+  private loadCachedAndProject(
+    connection: CloudConnection,
+  ): { profiles: LlmProviderProfile[]; models: GatewayModelEntry[] } {
     const profiles = validProfiles(this.dependencies.loadCachedProfiles())
       .filter((profile) => profile.enabled && profile.models.length > 0)
+    const models = validGatewayModels(this.dependencies.loadCachedModels())
     this.runConfigMigrationsAndNotify(profiles)
-    this.project(connection, profiles)
-    return profiles
+    this.migrateModelKeys(models)
+    this.project(connection, profiles, models)
+    return { profiles, models }
   }
 
   async sync(): Promise<ModelCatalogSync> {
     const connection = this.dependencies.getConnection()
     if (!connection.available) {
-      this.project(connection, [])
-      return { profiles: [] }
+      this.project(connection, [], [])
+      return { profiles: [], models: [] }
     }
     try {
-      return { profiles: await this.loadAndProject(connection) }
+      return await this.loadAndProject(connection)
     } catch (error) {
       return {
-        profiles: this.loadCachedAndProject(connection),
+        ...this.loadCachedAndProject(connection),
         warning: errorMessage(error),
       }
     }
@@ -238,8 +324,8 @@ export class ModelCatalogCoordinator {
   async prepareRuntime(): Promise<ModelCatalogRuntime> {
     const connection = this.dependencies.getConnection()
     if (!connection.available) {
-      this.project(connection, [])
-      return { profiles: [], chatToken: '', imageToken: '' }
+      this.project(connection, [], [])
+      return { profiles: [], models: [], chatToken: '', imageToken: '' }
     }
     const [catalogResult, sessionResult, imageResult] = await Promise.allSettled([
       this.loadAndProject(connection),
@@ -247,18 +333,19 @@ export class ModelCatalogCoordinator {
       this.dependencies.createImageAgentToken(connection.relay, connection.key),
     ])
     const warnings: string[] = []
-    const profiles =
+    const catalog =
       catalogResult.status === 'fulfilled'
         ? catalogResult.value
         : this.loadCachedAndProject(connection)
     if (catalogResult.status === 'rejected') warnings.push(errorMessage(catalogResult.reason))
     if (sessionResult.status === 'rejected') warnings.push(errorMessage(sessionResult.reason))
-    if (sessionResult.status === 'rejected') this.project(connection, [])
+    if (sessionResult.status === 'rejected') this.project(connection, [], [])
     // 出图票换不到不拦聊天:image_gen 那一个工具报未配置,其余照常。但要留下痕迹,
     // 不然"生图突然不能用了"查不到源头。
     if (imageResult.status === 'rejected') warnings.push(`image agent token: ${errorMessage(imageResult.reason)}`)
     return {
-      profiles: sessionResult.status === 'fulfilled' ? profiles : [],
+      profiles: sessionResult.status === 'fulfilled' ? catalog.profiles : [],
+      models: sessionResult.status === 'fulfilled' ? catalog.models : [],
       chatToken: sessionResult.status === 'fulfilled' ? sessionResult.value.token : '',
       imageToken: imageResult.status === 'fulfilled' ? imageResult.value.token : '',
       ...(warnings.length > 0 ? { warning: warnings.join('; ') } : {}),
@@ -287,6 +374,11 @@ export class ModelCatalogCoordinator {
       }
     }
     return providerLabelView(profiles)
+  }
+
+  /** 最近一次同步到的模型键目录(选择器补条目、悬浮信息显示线路用)。不发网络请求。 */
+  listCachedModels(): GatewayModelEntry[] {
+    return validGatewayModels(this.dependencies.loadCachedModels())
   }
 
   loadCachedProviderLabels(): ModelCatalogView {

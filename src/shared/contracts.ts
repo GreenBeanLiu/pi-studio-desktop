@@ -26,6 +26,13 @@ export type LlmModelMetadata = {
   }
 }
 
+/** 网关 `/llm/models`(llm-models/v1)的一项:模型键 + 能力 + 按切换顺序排的线路(只有 id 和显示名)。 */
+export type GatewayModelEntry = {
+  key: string
+  metadata: LlmModelMetadata
+  routes: Array<{ profile_id: string; display_name: string }>
+}
+
 export type LlmProviderProfile = {
   id: string
   display_name: string

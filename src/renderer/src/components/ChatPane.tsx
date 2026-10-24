@@ -44,8 +44,9 @@ import {
 import { diagnosticFileName, sanitizeForDiagnostics } from '../lib/diagnostics-export'
 import ToolCallCard, { type ToolExecutionState } from './ToolCallCard'
 import { type ModelRoute } from '../../../shared/model-route'
-import { buildModelChip, buildModelMenuGroups } from './model-menu'
+import { buildModelChip, buildModelMenuGroups, modelRouteSummary } from './model-menu'
 import { mergeAvailableModelInfo } from './available-models'
+import type { GatewayModelEntry } from '../../../shared/contracts'
 import { acpModeLabel, describeAcpModes } from '../../../shared/acp-modes'
 import { DEFAULT_THINKING_LEVEL } from '../../../shared/agent-defaults'
 import { runStatusColor, useStyles, type CxType, type StylesType } from './ChatPane.styles'
@@ -126,6 +127,8 @@ export default function ChatPane({
   const [commands, setCommands] = useState<SlashCommand[]>([])
   const [favoriteModels, setFavoriteModels] = useState<ModelRoute[]>([])
   const [providerLabels, setProviderLabels] = useState<Record<string, string>>({})
+  /** 按模型键的目录:悬浮信息里显示这个模型走哪几条线路。 */
+  const [gatewayModels, setGatewayModels] = useState<GatewayModelEntry[]>([])
   const [slashIndex, setSlashIndex] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [inputFocused, setInputFocused] = useState(false)
@@ -228,16 +231,20 @@ export default function ChatPane({
   }, [])
 
   const refreshAvailableModels = useCallback(async (): Promise<void> => {
-    const [modelsResult, profilesResult] = await Promise.allSettled([
+    const [modelsResult, profilesResult, keysResult] = await Promise.allSettled([
       api.pi.getAvailableModels(),
       api.llmProfiles.list(),
+      api.modelCatalog.listModels(),
     ])
     const runtimeModels = modelsResult.status === 'fulfilled' ? modelsResult.value : []
     const profiles =
       profilesResult.status === 'fulfilled' && 'profiles' in profilesResult.value
         ? profilesResult.value.profiles
         : []
-    setModels(mergeAvailableModelInfo(runtimeModels, profiles))
+    const keys =
+      keysResult.status === 'fulfilled' && 'models' in keysResult.value ? keysResult.value.models : []
+    setGatewayModels(keys)
+    setModels(mergeAvailableModelInfo(runtimeModels, profiles, keys))
   }, [])
 
   /**
@@ -1177,8 +1184,14 @@ export default function ChatPane({
     })()
     const rows: [string, string][] = []
     if (m.name && m.name !== m.id) rows.push(['名称', m.name])
-    rows.push(['服务商', m.provider])
-    if (host) rows.push(['接入点', host])
+    const routes = modelRouteSummary(m, gatewayModels)
+    if (routes) {
+      // 按模型键的条目:线路由网关选，显示登记的顺序，而不是网关自己的地址
+      rows.push(['线路', routes])
+    } else {
+      rows.push(['服务商', m.provider])
+      if (host) rows.push(['接入点', host])
+    }
     if (m.api) rows.push(['协议', m.api])
     const ctx = fmtTokens(m.contextWindow)
     if (ctx) rows.push(['上下文', `${ctx} tokens`])

@@ -37,6 +37,10 @@ function dependencies(
     saveCachedProfiles: vi.fn(),
     migrateOfficialDeepSeekFavorites: vi.fn(() => false),
     migrateDirectProviderRetirement: vi.fn(() => false),
+    fetchModels: vi.fn(async () => []),
+    loadCachedModels: vi.fn(() => []),
+    saveCachedModels: vi.fn(),
+    migrateToModelKeys: vi.fn(() => false),
   } as unknown as ModelCatalogDependencies
 }
 
