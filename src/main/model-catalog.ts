@@ -357,6 +357,10 @@ export class ModelCatalogCoordinator {
     return this.dependencies.listProfiles(connection.relay, connection.key)
   }
 
+  /**
+   * 启动时渲染层第一个调的就是它 —— 一次性配置搬迁都挂在这条路上(带 onChanged 的协调器只在 ipc 里有一个，
+   * 它启动时不走 sync)。模型键搬迁在 0.19.0 漏挂了这里，装上后收藏一直没搬(0.19.1 修)。
+   */
   async loadProviderLabels(): Promise<ModelCatalogView> {
     const connection = this.dependencies.getConnection()
     let profiles: LlmProviderProfile[]
@@ -365,13 +369,22 @@ export class ModelCatalogCoordinator {
       if (profiles.length === 0) {
         throw new Error(connection.error || 'Pi Studio cloud service is not configured')
       }
+      this.migrateModelKeys(validGatewayModels(this.dependencies.loadCachedModels()))
     } else {
-      try {
-        profiles = await this.fetchAndCacheProfiles(connection)
-      } catch (error) {
+      const [profilesResult, models] = await Promise.all([
+        this.fetchAndCacheProfiles(connection).then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+        this.fetchAndCacheModels(connection),
+      ])
+      if (profilesResult.ok) {
+        profiles = profilesResult.value
+      } else {
         profiles = validProfiles(this.dependencies.loadCachedProfiles())
-        if (profiles.length === 0) throw error
+        if (profiles.length === 0) throw profilesResult.error
       }
+      this.migrateModelKeys(models)
     }
     return providerLabelView(profiles)
   }

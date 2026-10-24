@@ -121,3 +121,41 @@ describe('model catalog coordination with model keys', () => {
     expect(new ModelCatalogCoordinator(deps).listCachedModels()).toEqual(gatewayModels)
   })
 })
+
+describe('model-key migration at startup (0.19.0 regression)', () => {
+  // 0.19.0:搬迁只挂在 sync 上，而启动时带 onChanged 的协调器只调 loadProviderLabels —— 装上后收藏一直没搬。
+  it('runs when the renderer first loads provider labels', async () => {
+    const onChanged = vi.fn()
+    const deps = dependencies({ migrateToModelKeys: vi.fn(() => true) })
+    const catalog = new ModelCatalogCoordinator(deps, onChanged)
+
+    await catalog.loadProviderLabels()
+
+    expect(deps.fetchModels).toHaveBeenCalled()
+    expect(deps.migrateToModelKeys).toHaveBeenCalledWith(gatewayModels)
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('runs from the cached model keys when the cloud is not configured', async () => {
+    const deps = dependencies({
+      getConnection: () => ({ available: false, relay: '', key: '', error: 'offline' }),
+      loadCachedProfiles: vi.fn(() => [profile]),
+      loadCachedModels: vi.fn(() => gatewayModels),
+    } as unknown as Partial<ModelCatalogDependencies>)
+    const catalog = new ModelCatalogCoordinator(deps, vi.fn())
+
+    await catalog.loadProviderLabels()
+
+    expect(deps.migrateToModelKeys).toHaveBeenCalledWith(gatewayModels)
+  })
+
+  it('still returns labels when the model-key catalog cannot be fetched', async () => {
+    const deps = dependencies({ fetchModels: vi.fn(async () => { throw new Error('HTTP 404') }) })
+    const catalog = new ModelCatalogCoordinator(deps, vi.fn())
+
+    await expect(catalog.loadProviderLabels()).resolves.toEqual({
+      providerLabels: { heilovehei: 'heilovehei', 'pi-studio': '模型' },
+    })
+    expect(deps.migrateToModelKeys).not.toHaveBeenCalled()
+  })
+})
