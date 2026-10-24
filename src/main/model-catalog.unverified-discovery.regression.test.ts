@@ -33,7 +33,7 @@ function dependencies(overrides: Partial<ModelCatalogDependencies> = {}): ModelC
     updateProfile: vi.fn(async (_relay, _key, value: LlmProfileWrite) => ({ ...profile, ...value })),
     deleteProfile: vi.fn(async () => undefined),
     refreshProfileModels: vi.fn(async () => ({ ...profile, new_models: ['gpt-6.1-sol'] })),
-    probeModel: vi.fn(async () => false),
+    probeModel: vi.fn(async (_relay, _token, _provider, model) => model !== 'gpt-6.1-sol'),
     providerHealth: vi.fn(),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),

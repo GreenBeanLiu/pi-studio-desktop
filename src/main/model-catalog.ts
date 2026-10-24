@@ -344,53 +344,64 @@ export class ModelCatalogCoordinator {
     // 先让服务端剔除明确不可用的旧模型，并取回上游新发现项；新模型逐个临时登记，
     // 只有最小 chat 请求成功才保留到线路配置和 Pi 模型目录。
     const refreshed = await this.dependencies.refreshProfileModels(connection.relay, connection.key, id)
-    let currentModels = [...refreshed.models]
+    const configuredModels = [...new Set(refreshed.models)]
+    const verifiedModels: string[] = []
     const rejectedModels: string[] = []
-    const discovered = [...new Set(refreshed.new_models ?? [])]
-      .filter((model) => !currentModels.includes(model))
+    const candidates = [...new Set([...configuredModels, ...(refreshed.new_models ?? [])])]
+    const { token } = await this.dependencies.createSessionToken(connection.relay, connection.key)
 
-    if (discovered.length > 0) {
-      const { token } = await this.dependencies.createSessionToken(connection.relay, connection.key)
-      for (const model of discovered) {
-        const stagedModels = [...currentModels, model]
-        await this.dependencies.updateProfile(connection.relay, connection.key, {
-          id: profile.id,
-          display_name: profile.display_name,
-          base_url: profile.base_url ?? '',
-          api_type: profile.api_type,
-          api_key: '',
-          models: stagedModels,
-          enabled: profile.enabled,
-          sort_order: profile.sort_order,
-        })
-
-        let verified = false
-        try {
-          verified = await this.dependencies.probeModel(connection.relay, token, profile.id, model)
-        } catch {
-          verified = false
-        }
-        if (!verified) {
-          rejectedModels.push(model)
+    try {
+      for (const model of candidates) {
+        // New discoveries must be temporarily added so the gateway can route the probe.
+        if (!configuredModels.includes(model)) {
           await this.dependencies.updateProfile(connection.relay, connection.key, {
             id: profile.id,
             display_name: profile.display_name,
             base_url: profile.base_url ?? '',
             api_type: profile.api_type,
             api_key: '',
-            models: currentModels,
+            models: [...configuredModels, model],
             enabled: profile.enabled,
             sort_order: profile.sort_order,
           })
         }
-        if (verified) currentModels = stagedModels
+        if (await this.dependencies.probeModel(connection.relay, token, profile.id, model)) {
+          verifiedModels.push(model)
+        } else {
+          rejectedModels.push(model)
+        }
       }
+
+      await this.dependencies.updateProfile(connection.relay, connection.key, {
+        id: profile.id,
+        display_name: profile.display_name,
+        base_url: profile.base_url ?? '',
+        api_type: profile.api_type,
+        api_key: '',
+        models: verifiedModels,
+        enabled: profile.enabled,
+        sort_order: profile.sort_order,
+      })
+    } catch (error) {
+      // A transport/token failure says nothing about model health. Restore the last
+      // committed list before surfacing it so temporary staging never leaks.
+      await this.dependencies.updateProfile(connection.relay, connection.key, {
+        id: profile.id,
+        display_name: profile.display_name,
+        base_url: profile.base_url ?? '',
+        api_type: profile.api_type,
+        api_key: '',
+        models: configuredModels,
+        enabled: profile.enabled,
+        sort_order: profile.sort_order,
+      })
+      throw error
     }
 
     const sync = await this.sync()
     this.onChanged?.()
     return {
-      verifiedModels: currentModels,
+      verifiedModels,
       rejectedModels,
       ...(sync.warning ? { warning: sync.warning } : {}),
     }

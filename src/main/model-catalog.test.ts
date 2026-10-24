@@ -314,7 +314,7 @@ describe('model catalog coordination', () => {
         new_models: ['gpt-6.1-sol', 'gpt-5.6-luna'],
       })),
       updateProfile,
-      probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'gpt-6.1-sol'),
+      probeModel: vi.fn(async (_relay, _token, _provider, model) => model !== 'gpt-5.6-luna'),
     })
     const catalog = new ModelCatalogCoordinator(deps)
 
