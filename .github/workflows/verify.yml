@@ -40,6 +40,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # electron 42 起包里没有 postinstall,二进制改成「第一次 require('electron') 时现下」。
+      # vitest 并行 worker 里有两个测试文件同时 import electron(acp-connection / remote-control),
+      # 两个进程一起往同一个 dist/ 解压:macOS 上无害,Windows 上 mkdir 撞车(os error 183),
+      # 输掉的那个文件直接红 —— v0.13.0 / v0.17.0 / v0.18.0 首跑全是这么挂的,rerun 靠运气过。
+      # 测试前在这里串行下一次;已经装好时 install.js 立即退出。
+      - run: pnpm exec install-electron
       - run: pnpm run verify
 
   # 打包产物的启动冒烟。verify 全绿也挡不住「装好之后一点就崩」——
