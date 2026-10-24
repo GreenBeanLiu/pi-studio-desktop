@@ -637,12 +637,15 @@ export default function SettingsModal({
       if ('error' in result) setLlmProfilesError(result.error)
       else {
         await loadLlmProfiles()
-        setCloudCatalogModels(result.verifiedModels.map((model) => `${id}::${model}`))
+        setCloudCatalogModels(result.models.map((model) => `${id}::${model}`))
         setLlmProfileDraft((draft) => draft?.id === id
-          ? { ...draft, models: result.verifiedModels }
+          ? { ...draft, models: result.models }
           : draft)
         if (result.rejectedModels.length > 0) {
-          message.warning(`验证未通过，未加入：${result.rejectedModels.join('、')}`)
+          message.warning(`上游确认不存在，已移除：${result.rejectedModels.join('、')}`)
+        }
+        if (result.unverifiedModels.length > 0) {
+          message.warning(`暂时没测出结果（已有的保留，新发现的未加入）：${result.unverifiedModels.join('、')}`)
         }
         if (result.verifiedModels.length > 0) {
           message.success(`已验证 ${result.verifiedModels.length} 个模型并同步到切换器`)
@@ -829,35 +832,40 @@ export default function SettingsModal({
       const routes = new Set<string>()
       const errors: string[] = []
       const rejected: string[] = []
+      const unverified: string[] = []
       for (const profile of profiles) {
         const result = await api.modelCatalog.verifyDiscoveredModels(profile.id)
         if ('error' in result) {
           errors.push(`${profile.display_name}: ${result.error}`)
           continue
         }
-        for (const model of result.verifiedModels) routes.add(`${profile.id}::${model}`)
-        rejected.push(...result.rejectedModels.map((model) => `${profile.display_name}: ${model}`))
+        for (const model of result.models) routes.add(`${profile.id}::${model}`)
+        rejected.push(...result.rejectedModels.map((model) => `${profile.display_name}: ${model}（不存在）`))
+        unverified.push(...result.unverifiedModels.map((model) => `${profile.display_name}: ${model}（未测出）`))
       }
       const models = [...routes]
+      const details = [...errors, ...rejected, ...unverified]
       setCloudCatalogModels(models)
       await loadLlmProfiles()
       if (models.length === 0) {
         setModelFetchResult({
           ok: false,
           message: '没有读取到模型',
-          ...([...errors, ...rejected].length > 0 ? { details: [...errors, ...rejected].join('\n') } : {}),
+          ...(details.length > 0 ? { details: details.join('\n') } : {}),
         })
         return
       }
+      const notes = [
+        rejected.length > 0 ? `${rejected.length} 个已确认不存在` : '',
+        unverified.length > 0 ? `${unverified.length} 个暂时没测出` : '',
+      ].filter(Boolean).join('，')
       setModelFetchResult({
         message: errors.length > 0
-          ? `已验证 ${models.length} 个模型；${errors.length} 条线路读取失败`
-          : `已验证 ${models.length} 个模型${rejected.length > 0 ? `，${rejected.length} 个未通过` : ''}`,
+          ? `可用 ${models.length} 个模型；${errors.length} 条线路读取失败`
+          : `可用 ${models.length} 个模型${notes ? `，${notes}` : ''}`,
         ok: true,
         models,
-        ...([...errors, ...rejected].length > 0
-          ? { details: [...errors, ...rejected].join('\n') }
-          : {}),
+        ...(details.length > 0 ? { details: details.join('\n') } : {}),
       })
     } catch (err) {
       setModelFetchResult({
@@ -1069,7 +1077,7 @@ export default function SettingsModal({
                     {allAvailableModels.length} 个模型
                   </span>
                 </div>
-                <span className={styles.labelHint}>逐个发送最多 1 token 的聊天验证请求；可能产生少量上游费用，验证失败的模型不会加入线路。</span>
+                <span className={styles.labelHint}>逐个发送最多 1 token 的聊天验证请求；可能产生少量上游费用。新模型验证通过才加入；已有模型只在上游明确说不存在时才移除。</span>
                 <div className={styles.modelCatalog}>
                   {[...new Set(allAvailableModels.map((route) => route.split('::', 1)[0]))].map((provider) => {
                     const profile = llmProfiles.find((item) => item.id === provider)
@@ -1733,7 +1741,7 @@ export default function SettingsModal({
                 showSearch
                 placeholder="搜索并选择已验证的模型"
               />
-              <span className={styles.labelHint}>仅显示已验证模型；刷新会发起最小聊天请求，可能产生少量 API 费用。</span>
+              <span className={styles.labelHint}>刷新会逐个发起最小聊天请求，只移除上游明确说不存在的模型，可能产生少量 API 费用。</span>
             </div>
             <div className={styles.section}>
               <span className={styles.switchItem}>

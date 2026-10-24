@@ -111,7 +111,17 @@ export type DesktopApi = {
   modelCatalog: {
     loadProviderLabels: () => Promise<{ ok: true; view: ModelCatalogView } | { error: string }>
     verifyDiscoveredModels: (id: string) => Promise<
-      | { ok: true; verifiedModels: string[]; rejectedModels: string[]; warning?: string }
+      | {
+          ok: true
+          /** 写回线路的最终列表:验证通过的 + 没测出结论但原本就配置着的。 */
+          models: string[]
+          verifiedModels: string[]
+          /** 上游明确说不存在，已删除/未加入。 */
+          rejectedModels: string[]
+          /** 没测出结论(key 失效、限流、超时等):已配置的保留，新发现的不加入。 */
+          unverifiedModels: string[]
+          warning?: string
+        }
       | { error: string }
     >
   }

@@ -159,38 +159,74 @@ export function createLlmSessionToken(
   return gatewayJson(relay, appKey, '/llm/session-token', { method: 'POST' })
 }
 
-/** 用一次最小 chat 请求确认发现的模型可用于聊天；调用可能产生少量上游费用。 */
+/**
+ * 探测结果分三档。只有 missing 能拿来删模型:401/403(key 失效)、429、5xx、超时、
+ * 参数不被接受(如不认 max_tokens)都只说明"这次没测出来",不说明模型不存在。
+ */
+export type LlmModelProbeResult = 'ok' | 'missing' | 'inconclusive'
+
+const MODEL_MISSING_CODES = new Set(['model_not_found', 'invalid_model', 'model_not_exist', 'unknown_model'])
+const MODEL_MISSING_MESSAGE =
+  /\bmodel\b.*\b(not found|does not exist|doesn't exist|not exist)\b|\b(unknown|invalid|no such)\s+model\b|模型.*(不存在|未找到)/i
+
+/** 上游/网关的错误体是否明确在说"这个模型不存在"。只认模型级的措辞,不认状态码。 */
+export function isModelMissingError(error: unknown): boolean {
+  if (typeof error === 'string') return MODEL_MISSING_MESSAGE.test(error)
+  if (!error || typeof error !== 'object') return false
+  const record = error as Record<string, unknown>
+  if (typeof record.code === 'string' && MODEL_MISSING_CODES.has(record.code.toLowerCase())) return true
+  for (const key of ['error', 'detail', 'message']) {
+    const value = record[key]
+    if (value !== undefined && isModelMissingError(value)) return true
+  }
+  return false
+}
+
+/** 用一次最小 chat 请求确认模型可用于聊天；调用可能产生少量上游费用。 */
 export async function probeLlmModel(
   relay: string,
   token: string,
   provider: string,
   model: string,
-): Promise<boolean> {
-  const response = await cloudFetch(
-    `${relay.replace(/\/+$/, '')}/llm/v1/${encodeURIComponent(provider)}/chat/completions`,
-    {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: 'Reply with OK.' }],
-        max_tokens: 1,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(30_000),
-    },
-  )
-  if (!response.ok) return false
+): Promise<LlmModelProbeResult> {
+  let response: Response
   try {
-    const payload = await response.json() as { error?: unknown; choices?: unknown }
-    return !payload.error && Array.isArray(payload.choices) && payload.choices.length > 0
-  } catch {
-    return false
+    response = await cloudFetch(
+      `${relay.replace(/\/+$/, '')}/llm/v1/${encodeURIComponent(provider)}/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: 'Reply with OK.' }],
+          max_tokens: 1,
+          stream: false,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      },
+    )
+  } catch (error) {
+    // 单个模型慢到超时不代表它坏了，也不该中断整轮验证；连不上网关这类错误照旧抛出。
+    if (error instanceof Error && error.name === 'TimeoutError') return 'inconclusive'
+    throw error
   }
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    payload = undefined
+  }
+  const body = payload && typeof payload === 'object' ? payload as { error?: unknown; choices?: unknown } : {}
+  if (response.ok && !body.error && Array.isArray(body.choices) && body.choices.length > 0) return 'ok'
+  // 401/403/429/5xx 一律不判死刑，哪怕错误体里碰巧提到 model。
+  if (response.status === 401 || response.status === 403 || response.status === 429 || response.status >= 500) {
+    return 'inconclusive'
+  }
+  return isModelMissingError(payload) ? 'missing' : 'inconclusive'
 }
 
 /**

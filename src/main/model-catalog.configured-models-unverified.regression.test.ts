@@ -23,7 +23,7 @@ function dependencies(overrides: Partial<ModelCatalogDependencies> = {}): ModelC
     updateProfile: vi.fn(async (_relay, _key, write) => ({ ...profile, ...write, has_key: true })),
     deleteProfile: vi.fn(),
     refreshProfileModels: vi.fn(async () => ({ ...profile, new_models: ['new-working-model'] })),
-    probeModel: vi.fn(async (_relay, _token, _provider, model) => model !== 'broken-configured-model'),
+    probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'broken-configured-model' ? 'missing' : 'ok'),
     providerHealth: vi.fn(),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),

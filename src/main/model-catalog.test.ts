@@ -86,7 +86,7 @@ function dependencies(
     updateProfile: vi.fn(async () => profile),
     deleteProfile: vi.fn(async () => undefined),
     refreshProfileModels: vi.fn(async () => profile),
-    probeModel: vi.fn(async () => true),
+    probeModel: vi.fn(async () => 'ok' as const),
     providerHealth: vi.fn(async () => providerHealth),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),
@@ -314,13 +314,15 @@ describe('model catalog coordination', () => {
         new_models: ['gpt-6.1-sol', 'gpt-5.6-luna'],
       })),
       updateProfile,
-      probeModel: vi.fn(async (_relay, _token, _provider, model) => model !== 'gpt-5.6-luna'),
+      probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'gpt-5.6-luna' ? 'missing' : 'ok'),
     })
     const catalog = new ModelCatalogCoordinator(deps)
 
     await expect(catalog.verifyDiscoveredModels(profile.id)).resolves.toEqual({
+      models: ['gpt-5.5', 'gpt-6.1-sol'],
       verifiedModels: ['gpt-5.5', 'gpt-6.1-sol'],
       rejectedModels: ['gpt-5.6-luna'],
+      unverifiedModels: [],
     })
     expect(remoteProfile.models).toEqual(['gpt-5.5', 'gpt-6.1-sol'])
     expect(deps.projectModels).toHaveBeenLastCalledWith(

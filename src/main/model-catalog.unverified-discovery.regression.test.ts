@@ -33,7 +33,7 @@ function dependencies(overrides: Partial<ModelCatalogDependencies> = {}): ModelC
     updateProfile: vi.fn(async (_relay, _key, value: LlmProfileWrite) => ({ ...profile, ...value })),
     deleteProfile: vi.fn(async () => undefined),
     refreshProfileModels: vi.fn(async () => ({ ...profile, new_models: ['gpt-6.1-sol'] })),
-    probeModel: vi.fn(async (_relay, _token, _provider, model) => model !== 'gpt-6.1-sol'),
+    probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'gpt-6.1-sol' ? 'missing' : 'ok'),
     providerHealth: vi.fn(),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),
@@ -51,8 +51,10 @@ describe('unverified upstream model discovery regression', () => {
     const catalog = new ModelCatalogCoordinator(deps, onChanged)
 
     await expect(catalog.verifyDiscoveredModels(profile.id)).resolves.toEqual({
+      models: ['gpt-5.6-sol'],
       verifiedModels: ['gpt-5.6-sol'],
       rejectedModels: ['gpt-6.1-sol'],
+      unverifiedModels: [],
     })
 
     expect(deps.updateProfile).toHaveBeenNthCalledWith(1, 'https://relay.example', 'desktop-key', {

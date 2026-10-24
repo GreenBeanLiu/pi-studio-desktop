@@ -335,20 +335,29 @@ export class ModelCatalogCoordinator {
 
   async verifyDiscoveredModels(
     id: string,
-  ): Promise<{ verifiedModels: string[]; rejectedModels: string[]; warning?: string }> {
+  ): Promise<{
+    models: string[]
+    verifiedModels: string[]
+    rejectedModels: string[]
+    unverifiedModels: string[]
+    warning?: string
+  }> {
     const connection = this.requireConnection()
     const profile = (await this.dependencies.listProfiles(connection.relay, connection.key))
       .find((item) => item.id === id && item.enabled)
     if (!profile) throw new Error('找不到已启用的模型线路')
 
     // 先让服务端剔除明确不可用的旧模型，并取回上游新发现项；新模型逐个临时登记，
-    // 只有最小 chat 请求成功才保留到线路配置和 Pi 模型目录。
+    // 只有最小 chat 请求成功才加入。已配置的模型只在上游明确说"模型不存在"时才删:
+    // key 失效、限流、5xx、超时、参数不兼容都只算没测出来，原样保留。
     const refreshed = await this.dependencies.refreshProfileModels(connection.relay, connection.key, id)
     const configuredModels = [...new Set(refreshed.models)]
     const verifiedModels: string[] = []
     const rejectedModels: string[] = []
+    const unverifiedModels: string[] = []
     const candidates = [...new Set([...configuredModels, ...(refreshed.new_models ?? [])])]
     const { token } = await this.dependencies.createSessionToken(connection.relay, connection.key)
+    let nextModels = configuredModels
 
     try {
       for (const model of candidates) {
@@ -365,44 +374,60 @@ export class ModelCatalogCoordinator {
             sort_order: profile.sort_order,
           })
         }
-        if (await this.dependencies.probeModel(connection.relay, token, profile.id, model)) {
-          verifiedModels.push(model)
-        } else {
-          rejectedModels.push(model)
-        }
+        const probe = await this.dependencies.probeModel(connection.relay, token, profile.id, model)
+        if (probe === 'ok') verifiedModels.push(model)
+        else if (probe === 'missing') rejectedModels.push(model)
+        else unverifiedModels.push(model)
       }
 
+      // 每个模型都被判"不存在"更像线路本身配错了(base_url、上游换了路径),不是模型
+      // 全下架了;这时不动配置，让用户去看线路。
+      if (configuredModels.length > 0 && rejectedModels.length === candidates.length) {
+        throw new Error('所有模型都被上游判定为不存在，疑似线路配置有误，已保留原有模型列表')
+      }
+
+      nextModels = candidates.filter((model) =>
+        verifiedModels.includes(model)
+        || (unverifiedModels.includes(model) && configuredModels.includes(model)))
       await this.dependencies.updateProfile(connection.relay, connection.key, {
         id: profile.id,
         display_name: profile.display_name,
         base_url: profile.base_url ?? '',
         api_type: profile.api_type,
         api_key: '',
-        models: verifiedModels,
+        models: nextModels,
         enabled: profile.enabled,
         sort_order: profile.sort_order,
       })
     } catch (error) {
       // A transport/token failure says nothing about model health. Restore the last
       // committed list before surfacing it so temporary staging never leaks.
-      await this.dependencies.updateProfile(connection.relay, connection.key, {
-        id: profile.id,
-        display_name: profile.display_name,
-        base_url: profile.base_url ?? '',
-        api_type: profile.api_type,
-        api_key: '',
-        models: configuredModels,
-        enabled: profile.enabled,
-        sort_order: profile.sort_order,
-      })
+      try {
+        await this.dependencies.updateProfile(connection.relay, connection.key, {
+          id: profile.id,
+          display_name: profile.display_name,
+          base_url: profile.base_url ?? '',
+          api_type: profile.api_type,
+          api_key: '',
+          models: configuredModels,
+          enabled: profile.enabled,
+          sort_order: profile.sort_order,
+        })
+      } catch (restoreError) {
+        throw new Error(
+          `${(error as Error).message ?? String(error)}；恢复原模型列表也失败了：${(restoreError as Error).message ?? String(restoreError)}`,
+        )
+      }
       throw error
     }
 
     const sync = await this.sync()
     this.onChanged?.()
     return {
+      models: nextModels,
       verifiedModels,
       rejectedModels,
+      unverifiedModels,
       ...(sync.warning ? { warning: sync.warning } : {}),
     }
   }
