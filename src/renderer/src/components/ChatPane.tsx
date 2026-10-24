@@ -45,6 +45,7 @@ import { diagnosticFileName, sanitizeForDiagnostics } from '../lib/diagnostics-e
 import ToolCallCard, { type ToolExecutionState } from './ToolCallCard'
 import { type ModelRoute } from '../../../shared/model-route'
 import { buildModelChip, buildModelMenuGroups } from './model-menu'
+import { mergeAvailableModelInfo } from './available-models'
 import { acpModeLabel, describeAcpModes } from '../../../shared/acp-modes'
 import { DEFAULT_THINKING_LEVEL } from '../../../shared/agent-defaults'
 import { runStatusColor, useStyles, type CxType, type StylesType } from './ChatPane.styles'
@@ -226,6 +227,19 @@ export default function ChatPane({
     }
   }, [])
 
+  const refreshAvailableModels = useCallback(async (): Promise<void> => {
+    const [modelsResult, profilesResult] = await Promise.allSettled([
+      api.pi.getAvailableModels(),
+      api.llmProfiles.list(),
+    ])
+    const runtimeModels = modelsResult.status === 'fulfilled' ? modelsResult.value : []
+    const profiles =
+      profilesResult.status === 'fulfilled' && 'profiles' in profilesResult.value
+        ? profilesResult.value.profiles
+        : []
+    setModels(mergeAvailableModelInfo(runtimeModels, profiles))
+  }, [])
+
   /**
    * 后端相关的状态一起刷。
    *
@@ -312,11 +326,11 @@ export default function ChatPane({
       })
       .catch(() => {})
     api.pi.getAgentStatusSnapshot().then(setAgentStatus).catch(() => setAgentStatus(null))
-    api.pi.getAvailableModels().then(setModels).catch(() => {})
+    void refreshAvailableModels()
     api.pi.getCommands().then(setCommands).catch(() => {})
     void refreshModelSwitcherState()
     void refreshBackendState()
-  }, [workspace?.path, refreshModelSwitcherState, refreshBackendState, applyProjectionMessages])
+  }, [workspace?.path, refreshModelSwitcherState, refreshBackendState, refreshAvailableModels, applyProjectionMessages])
 
   useEffect(() => {
     return api.pi.onAgentStatusSnapshot(setAgentStatus)
@@ -353,10 +367,10 @@ export default function ChatPane({
     const off = api.settings.onChanged(() => {
       void refreshModelSwitcherState()
       syncedCustomModelsRef.current = false
-      api.pi.getAvailableModels().then(setModels).catch(() => {})
+      void refreshAvailableModels()
     })
     return off
-  }, [refreshModelSwitcherState])
+  }, [refreshModelSwitcherState, refreshAvailableModels])
 
   // For the completion notification — the event subscription effect runs once,
   // so it reads the current workspace through a ref.

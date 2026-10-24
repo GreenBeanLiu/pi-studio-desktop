@@ -59,8 +59,8 @@ function toEntry(model: ModelInfo, isAcpGroup: boolean): ModelMenuEntry {
 /**
  * 模型选择器的分组。
  *
- * 配了「模型切换列表」就只显示列表里的模型 —— 没被点名的 provider 组整组消失
- * (registry 里的历史注册/本地直连残留不再刷屏);完全没配时才回退每组最新 8 个。
+ * 每条 provider 独立应用「模型切换列表」:选过的线路只显示明确选择的模型,还没选过的线路
+ * 显示该组最新 8 个,避免一个 provider 的收藏把其他线路整组藏掉。
  *
  * 两个例外:搜索时和外部 agent 组,见下面。
  */
@@ -76,8 +76,6 @@ export function buildModelMenuGroups(input: ModelMenuInput): ModelMenuGroup[] {
     list.push(model)
     byProvider.set(model.provider, list)
   }
-  const anyFavorites = favSet.size > 0
-
   return [...byProvider.entries()]
     .map(([provider, list]): ModelMenuGroup => {
       const isAcpGroup = isAcpModelRoute(provider)
@@ -103,11 +101,11 @@ export function buildModelMenuGroups(input: ModelMenuInput): ModelMenuGroup[] {
       const providerFavorites = list.filter((model) =>
         favSet.has(favoriteRouteKey(model.provider, model.id)),
       )
-      let shown = anyFavorites
+      let shown = providerFavorites.length > 0
         ? providerFavorites
         : list.slice(-FALLBACK_PER_PROVIDER).reverse()
       // 当前在用的模型不在列表里也要能看见(否则不知道自己用的什么)
-      if (anyFavorites && input.currentModel && input.currentModel.provider === provider) {
+      if (input.currentModel && input.currentModel.provider === provider) {
         const current = list.find((model) => model.id === input.currentModel!.id)
         if (current && !shown.includes(current)) shown = [current, ...shown]
       }

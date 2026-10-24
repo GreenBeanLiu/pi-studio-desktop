@@ -40,12 +40,15 @@ describe('provider grouping', () => {
     expect(build({ models: [DS_CHAT] })[0]?.label).toBe('deepseek')
   })
 
-  it('shows only the favourites once any are configured', () => {
+  it('filters each provider independently and keeps unconfigured providers visible', () => {
     const groups = build({
-      models: [DS_CHAT, DS_PRO],
+      models: [DS_CHAT, DS_PRO, model('heilovehei', 'gpt-5.6-sol')],
       favoriteModels: [{ provider: 'deepseek', model: 'deepseek-chat' }],
     })
-    expect(groups[0]?.children.map((c) => c.info.id)).toEqual(['deepseek-chat'])
+    expect(groups.find((group) => group.provider === 'deepseek')?.children.map((c) => c.info.id))
+      .toEqual(['deepseek-chat'])
+    expect(groups.find((group) => group.provider === 'heilovehei')?.children.map((c) => c.info.id))
+      .toEqual(['gpt-5.6-sol'])
   })
 
   it('keeps the model in use visible even when it is not a favourite', () => {
@@ -57,12 +60,12 @@ describe('provider grouping', () => {
     expect(groups[0]?.children.map((c) => c.info.id)).toEqual(['deepseek-v4-pro', 'deepseek-chat'])
   })
 
-  it('drops a group that ends up empty', () => {
+  it('uses a small fallback for a provider with no selected models', () => {
     const groups = build({
       models: [DS_CHAT, CODEX],
       favoriteModels: [{ provider: 'acp', model: 'codex-acp' }],
     })
-    expect(groups.map((g) => g.provider)).toEqual(['acp'])
+    expect(groups.map((g) => g.provider)).toEqual(['deepseek', 'acp'])
   })
 })
 
