@@ -132,6 +132,9 @@ export async function probeLlmModel(
           Accept: 'application/json',
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
+          // 只测这一条线路：网关默认会在 429/5xx 时切到有同名模型的备份线路，
+          // 被备份接住的成功不能算这条线路的模型可用。老网关不认这个头，照旧放行。
+          'X-Pi-No-Failover': '1',
         },
         body: JSON.stringify({
           model,

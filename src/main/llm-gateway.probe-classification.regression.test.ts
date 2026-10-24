@@ -23,6 +23,13 @@ describe('model probe classification regression', () => {
     await expect(probe()).resolves.toBe('ok')
   })
 
+  it('pins the probe to the route under test so a backup route cannot answer for it', async () => {
+    respond(200, { choices: [{ message: { content: 'O' } }] })
+    await probe()
+    const init = vi.mocked(cloudFetch).mock.calls[0][1] as RequestInit
+    expect((init.headers as Record<string, string>)['X-Pi-No-Failover']).toBe('1')
+  })
+
   it.each([
     ['404 model_not_found code', 404, { error: { code: 'model_not_found', message: 'nope' } }],
     ['400 "model does not exist"', 400, { error: { message: 'The model `gpt-x` does not exist' } }],
