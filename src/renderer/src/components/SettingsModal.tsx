@@ -32,6 +32,7 @@ import {
   parseFavoriteModelRoutes,
 } from '../../../shared/model-route'
 import { formatLlmProfileModels, parseLlmProfileModels } from './llm-profile-models'
+import { buildAvailableModelRoutes } from './available-models'
 import { QRCodeSVG } from 'qrcode.react'
 
 type Settings = SettingsView & { clearCloudImageKey?: boolean }
@@ -603,6 +604,12 @@ export default function SettingsModal({
         // 看见模型莫名其妙少了几个、或者压根不知道上游出了新模型。
         const dropped = result.profile?.unavailable_models ?? []
         const discovered = result.profile?.new_models ?? []
+        if (result.profile?.enabled && discovered.length > 0) {
+          setCloudCatalogModels((current) => [...new Set([
+            ...current,
+            ...discovered.map((model) => `${result.profile.id}::${model}`),
+          ])])
+        }
         if (dropped.length > 0) {
           message.warning(`实际调用不通，已剔除：${dropped.join('、')}`)
         }
@@ -786,14 +793,40 @@ export default function SettingsModal({
     setFetchingModels(true)
     setModelFetchResult(null)
     try {
-      const result = await api.settings.listCloudModels({
-        relay: settings.cloudImageRelay,
-        key: settings.cloudImageKey,
-      })
-      setModelFetchResult(result)
-      if (result.ok) {
-        setCloudCatalogModels(result.models)
+      const profiles = llmProfiles.filter((profile) => profile.enabled)
+      if (profiles.length === 0) {
+        setModelFetchResult({ ok: false, message: '没有已启用的 provider' })
+        return
       }
+      const routes = new Set<string>()
+      const errors: string[] = []
+      for (const profile of profiles) {
+        const result = await api.llmProfiles.refreshModels(profile.id)
+        if ('error' in result) {
+          errors.push(`${profile.display_name}: ${result.error}`)
+          continue
+        }
+        for (const model of result.profile.models) routes.add(`${profile.id}::${model}`)
+        for (const model of result.profile.new_models ?? []) routes.add(`${profile.id}::${model}`)
+      }
+      const models = [...routes]
+      setCloudCatalogModels(models)
+      await loadLlmProfiles()
+      if (models.length === 0) {
+        setModelFetchResult({
+          ok: false,
+          message: '没有读取到模型',
+          ...(errors.length > 0 ? { details: errors.join('\n') } : {}),
+        })
+        return
+      }
+      setModelFetchResult({
+        message: errors.length > 0
+          ? `已读取 ${models.length} 个模型；${errors.length} 条线路读取失败`
+          : `已从 ${profiles.length} 条线路读取 ${models.length} 个模型`,
+        ok: true,
+        models,
+      })
     } catch (err) {
       setModelFetchResult({
         ok: false,
@@ -805,11 +838,7 @@ export default function SettingsModal({
     }
   }
 
-  const allAvailableModels = [...new Set([
-    ...llmProfiles.filter((profile) => profile.enabled)
-      .flatMap((profile) => profile.models.map((model) => `${profile.id}::${model}`)),
-    ...cloudCatalogModels,
-  ])]
+  const allAvailableModels = buildAvailableModelRoutes(llmProfiles, cloudCatalogModels)
 
   return (
     <Modal
