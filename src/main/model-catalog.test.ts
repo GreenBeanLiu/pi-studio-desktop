@@ -86,6 +86,7 @@ function dependencies(
     updateProfile: vi.fn(async () => profile),
     deleteProfile: vi.fn(async () => undefined),
     refreshProfileModels: vi.fn(async () => profile),
+    probeModel: vi.fn(async () => true),
     providerHealth: vi.fn(async () => providerHealth),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),
@@ -297,6 +298,35 @@ describe('model catalog coordination', () => {
       'desktop-key',
       'three-a-main',
     )
+  })
+
+  it('only keeps upstream discoveries in the Pi catalog after a successful chat probe', async () => {
+    let remoteProfile = profile
+    const updateProfile = vi.fn(async (_relay, _key, update: LlmProfileWrite) => {
+      remoteProfile = { ...remoteProfile, ...update, has_key: true }
+      return remoteProfile
+    })
+    const deps = dependencies({
+      listProfiles: vi.fn(async () => [remoteProfile]),
+      fetchCatalog: vi.fn(async () => ({ providers: [remoteProfile] })),
+      refreshProfileModels: vi.fn(async () => ({
+        ...profile,
+        new_models: ['gpt-6.1-sol', 'gpt-5.6-luna'],
+      })),
+      updateProfile,
+      probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'gpt-6.1-sol'),
+    })
+    const catalog = new ModelCatalogCoordinator(deps)
+
+    await expect(catalog.verifyDiscoveredModels(profile.id)).resolves.toEqual({
+      verifiedModels: ['gpt-5.5', 'gpt-6.1-sol'],
+      rejectedModels: ['gpt-5.6-luna'],
+    })
+    expect(remoteProfile.models).toEqual(['gpt-5.5', 'gpt-6.1-sol'])
+    expect(deps.projectModels).toHaveBeenLastCalledWith(
+      expect.objectContaining({ gatewayProfiles: [remoteProfile] }),
+    )
+    expect(updateProfile).toHaveBeenCalledTimes(3)
   })
 
   it('loads provider labels from the last valid cache when the gateway is offline', async () => {

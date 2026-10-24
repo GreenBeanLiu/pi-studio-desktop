@@ -11,7 +11,6 @@ import {
   type LlmProfileWrite,
   type LlmProviderProfile,
   type ProviderConnectionResult,
-  type ProviderModelListResult,
   type SandboxDetect,
   type SandboxImageStatus,
   type RemoteControlSnapshot,
@@ -35,6 +34,9 @@ import { buildAvailableModelRoutes } from './available-models'
 import { QRCodeSVG } from 'qrcode.react'
 
 type Settings = SettingsView & { clearCloudImageKey?: boolean }
+type ModelFetchResult =
+  | { ok: true; message: string; models: string[]; details?: string }
+  | { ok: false; message: string; details?: string }
 
 type LlmProfileDraft = Omit<LlmProfileWrite, 'models'> & { models: string[]; create: boolean }
 
@@ -378,7 +380,7 @@ export default function SettingsModal({
   const [version, setVersion] = useState('')
   const [piVersion, setPiVersion] = useState('')
   const [fetchingModels, setFetchingModels] = useState(false)
-  const [modelFetchResult, setModelFetchResult] = useState<ProviderModelListResult | null>(null)
+  const [modelFetchResult, setModelFetchResult] = useState<ModelFetchResult | null>(null)
   const [cloudCatalogModels, setCloudCatalogModels] = useState<string[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [channelDraft, setChannelDraft] = useState<Channel | null>(null)
@@ -631,29 +633,19 @@ export default function SettingsModal({
   async function refreshLlmModels(id: string) {
     setLlmProfilesLoading(true)
     try {
-      const result = await api.llmProfiles.refreshModels(id)
+      const result = await api.modelCatalog.verifyDiscoveredModels(id)
       if ('error' in result) setLlmProfilesError(result.error)
       else {
         await loadLlmProfiles()
-        // 刷新只做减法:探活剔除调不通的,新模型只报不加(上游一个分组里混着图像和
-        // 视频模型,整表覆盖会把它们灌进聊天列表)。两边都得说一声,否则用户只会
-        // 看见模型莫名其妙少了几个、或者压根不知道上游出了新模型。
-        const dropped = result.profile?.unavailable_models ?? []
-        const discovered = result.profile?.new_models ?? []
-        if (result.profile?.enabled && discovered.length > 0) {
-          setCloudCatalogModels((current) => [...new Set([
-            ...current,
-            ...discovered.map((model) => `${result.profile.id}::${model}`),
-          ])])
+        setCloudCatalogModels(result.verifiedModels.map((model) => `${id}::${model}`))
+        setLlmProfileDraft((draft) => draft?.id === id
+          ? { ...draft, models: result.verifiedModels }
+          : draft)
+        if (result.rejectedModels.length > 0) {
+          message.warning(`验证未通过，未加入：${result.rejectedModels.join('、')}`)
         }
-        if (dropped.length > 0) {
-          message.warning(`实际调用不通，已剔除：${dropped.join('、')}`)
-        }
-        if (discovered.length > 0) {
-          message.info(`上游发现 ${discovered.length} 个模型；可在编辑线路中搜索选择`)
-        }
-        if (dropped.length === 0 && discovered.length === 0) {
-          message.success('模型列表已是最新，全部可用')
+        if (result.verifiedModels.length > 0) {
+          message.success(`已验证 ${result.verifiedModels.length} 个模型并同步到切换器`)
         }
         if (result.warning) setLlmProfilesError(result.warning)
       }
@@ -836,14 +828,15 @@ export default function SettingsModal({
       }
       const routes = new Set<string>()
       const errors: string[] = []
+      const rejected: string[] = []
       for (const profile of profiles) {
-        const result = await api.llmProfiles.refreshModels(profile.id)
+        const result = await api.modelCatalog.verifyDiscoveredModels(profile.id)
         if ('error' in result) {
           errors.push(`${profile.display_name}: ${result.error}`)
           continue
         }
-        for (const model of result.profile.models) routes.add(`${profile.id}::${model}`)
-        for (const model of result.profile.new_models ?? []) routes.add(`${profile.id}::${model}`)
+        for (const model of result.verifiedModels) routes.add(`${profile.id}::${model}`)
+        rejected.push(...result.rejectedModels.map((model) => `${profile.display_name}: ${model}`))
       }
       const models = [...routes]
       setCloudCatalogModels(models)
@@ -852,16 +845,19 @@ export default function SettingsModal({
         setModelFetchResult({
           ok: false,
           message: '没有读取到模型',
-          ...(errors.length > 0 ? { details: errors.join('\n') } : {}),
+          ...([...errors, ...rejected].length > 0 ? { details: [...errors, ...rejected].join('\n') } : {}),
         })
         return
       }
       setModelFetchResult({
         message: errors.length > 0
-          ? `已读取 ${models.length} 个模型；${errors.length} 条线路读取失败`
-          : `已从 ${profiles.length} 条线路读取 ${models.length} 个模型`,
+          ? `已验证 ${models.length} 个模型；${errors.length} 条线路读取失败`
+          : `已验证 ${models.length} 个模型${rejected.length > 0 ? `，${rejected.length} 个未通过` : ''}`,
         ok: true,
         models,
+        ...([...errors, ...rejected].length > 0
+          ? { details: [...errors, ...rejected].join('\n') }
+          : {}),
       })
     } catch (err) {
       setModelFetchResult({
@@ -1048,7 +1044,7 @@ export default function SettingsModal({
                         loading={llmProfileHealthLoading === profile.id}
                         onClick={() => showLlmProviderHealth(profile)}
                       />
-                      <Button size="small" title="从上游 /models 同步" icon={<RefreshCw size={13} />} onClick={() => refreshLlmModels(profile.id)} />
+                      <Button size="small" title="验证并同步上游模型" icon={<RefreshCw size={13} />} onClick={() => refreshLlmModels(profile.id)} />
                       <Button size="small" title="编辑" icon={<Pencil size={13} />} onClick={() => editLlmProfile(profile)} />
                       <Popconfirm title="删除这条模型线路？" onConfirm={() => removeLlmProfile(profile.id)}>
                         <Button size="small" danger icon={<Trash2 size={13} />} />
@@ -1063,16 +1059,17 @@ export default function SettingsModal({
               <div className={styles.section}>
                 <span className={styles.label}>
                   全部可用模型
-                  <span className={styles.labelHint}>按线路展示已配置和从上游发现的模型</span>
+                  <span className={styles.labelHint}>只展示可进入聊天切换器的模型</span>
                 </span>
                 <div className={styles.actionRow}>
                   <Button size="small" onClick={handleFetchModels} loading={fetchingModels}>
-                    同步全部线路
+                    验证并同步全部线路
                   </Button>
                   <span className={styles.labelHint}>
                     {allAvailableModels.length} 个模型
                   </span>
                 </div>
+                <span className={styles.labelHint}>逐个发送最多 1 token 的聊天验证请求；可能产生少量上游费用，验证失败的模型不会加入线路。</span>
                 <div className={styles.modelCatalog}>
                   {[...new Set(allAvailableModels.map((route) => route.split('::', 1)[0]))].map((provider) => {
                     const profile = llmProfiles.find((item) => item.id === provider)
@@ -1100,7 +1097,7 @@ export default function SettingsModal({
                     type={modelFetchResult.ok ? 'success' : 'error'}
                     showIcon
                     message={modelFetchResult.message}
-                    description={modelFetchResult.ok ? undefined : modelFetchResult.details}
+                    description={modelFetchResult.details}
                   />
                 )}
               </div>
@@ -1722,11 +1719,11 @@ export default function SettingsModal({
                   loading={llmProfilesLoading}
                   onClick={() => void refreshLlmModels(llmProfileDraft.id)}
                 >
-                  刷新上游模型
+                  验证并同步上游模型
                 </Button>
               </div>
               <Select
-                mode="tags"
+                mode="multiple"
                 value={llmProfileDraft.models}
                 onChange={(models: string[]) => setLlmProfileDraft((draft) => draft && ({ ...draft, models }))}
                 options={allAvailableModels
@@ -1734,10 +1731,9 @@ export default function SettingsModal({
                   .map((route) => ({ value: route.slice(llmProfileDraft.id.length + 2) }))}
                 optionFilterProp="value"
                 showSearch
-                tokenSeparators={[',', '\n']}
-                placeholder="搜索上游已发现模型，或输入模型 ID 添加"
+                placeholder="搜索并选择已验证的模型"
               />
-              <span className={styles.labelHint}>选择后保存到线路；新线路先保存，再刷新上游模型。</span>
+              <span className={styles.labelHint}>仅显示已验证模型；刷新会发起最小聊天请求，可能产生少量 API 费用。</span>
             </div>
             <div className={styles.section}>
               <span className={styles.switchItem}>

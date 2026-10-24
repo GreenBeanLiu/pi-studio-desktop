@@ -55,3 +55,11 @@ export function parseLlmProfileSavePayload(value: unknown): LlmProfileSavePayloa
     ? { create: true, profile: parseProfile(value.profile, true) }
     : { create: false, profile: parseProfile(value.profile, false) }
 }
+
+export function parseLlmProfileId(value: unknown): string {
+  const id = requiredString(value, '线路 ID')
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(id)) {
+    throw new TypeError('线路 ID 格式无效')
+  }
+  return id
+}

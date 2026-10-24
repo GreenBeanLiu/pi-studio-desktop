@@ -48,7 +48,7 @@ import { getCloudConnection, getDraftCloudConnection } from './cloud-connection'
 import { workspaceInventory } from './workspace-inventory'
 import { fetchLlmCatalog, listEnabledLlmRoutes } from './llm-gateway'
 import { ModelCatalogCoordinator } from './model-catalog'
-import { parseLlmProfileSavePayload } from './ipc-contracts'
+import { parseLlmProfileId, parseLlmProfileSavePayload } from './ipc-contracts'
 import {
   isRecord,
   oneOf,
@@ -392,6 +392,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('modelCatalog:loadProviderLabels', async () => {
     try {
       return { ok: true, view: await modelCatalog.loadProviderLabels() }
+    } catch (err) {
+      return { error: (err as Error).message ?? String(err) }
+    }
+  })
+  ipcMain.handle('modelCatalog:verifyDiscoveredModels', async (_event, id: unknown) => {
+    try {
+      return { ok: true, ...(await modelCatalog.verifyDiscoveredModels(parseLlmProfileId(id))) }
     } catch (err) {
       return { error: (err as Error).message ?? String(err) }
     }

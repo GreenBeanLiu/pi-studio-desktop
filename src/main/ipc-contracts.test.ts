@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { parseLlmProfileSavePayload } from './ipc-contracts'
+import { parseLlmProfileId, parseLlmProfileSavePayload } from './ipc-contracts'
 
 const ipcSource = readFileSync(new URL('./ipc.ts', import.meta.url), 'utf8')
 
@@ -16,6 +16,11 @@ const profile = {
 }
 
 describe('llm profile IPC contract', () => {
+  it('accepts only a valid provider id for model verification', () => {
+    expect(parseLlmProfileId('three-a-main')).toBe('three-a-main')
+    expect(() => parseLlmProfileId('../bad')).toThrow('线路 ID')
+  })
+
   it('requires a key when creating a profile', () => {
     expect(() =>
       parseLlmProfileSavePayload({ create: true, profile: { ...profile, api_key: '' } }),
@@ -52,5 +57,11 @@ describe('backup restore IPC contract', () => {
 describe('provider health IPC contract', () => {
   it('registers the provider health handler', () => {
     expect(ipcSource).toContain("ipcMain.handle('llmProfiles:providerHealth'")
+  })
+})
+
+describe('model verification IPC contract', () => {
+  it('registers the validated discovery handler', () => {
+    expect(ipcSource).toContain("ipcMain.handle('modelCatalog:verifyDiscoveredModels'")
   })
 })

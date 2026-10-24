@@ -159,6 +159,40 @@ export function createLlmSessionToken(
   return gatewayJson(relay, appKey, '/llm/session-token', { method: 'POST' })
 }
 
+/** 用一次最小 chat 请求确认发现的模型可用于聊天；调用可能产生少量上游费用。 */
+export async function probeLlmModel(
+  relay: string,
+  token: string,
+  provider: string,
+  model: string,
+): Promise<boolean> {
+  const response = await cloudFetch(
+    `${relay.replace(/\/+$/, '')}/llm/v1/${encodeURIComponent(provider)}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Reply with OK.' }],
+        max_tokens: 1,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    },
+  )
+  if (!response.ok) return false
+  try {
+    const payload = await response.json() as { error?: unknown; choices?: unknown }
+    return !payload.error && Array.isArray(payload.choices) && payload.choices.length > 0
+  } catch {
+    return false
+  }
+}
+
 /**
  * 给 agent 子进程换一张只能出图的票。子进程不该拿 appKey 本身 —— 那把 key 在后端
  * 是管理员(能改 provider 的 base_url、签 chat token、读日志),而 image_gen 扩展

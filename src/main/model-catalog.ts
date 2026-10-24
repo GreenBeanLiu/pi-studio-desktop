@@ -10,6 +10,7 @@ import {
   fetchLlmProviderHealth,
   listLlmProfiles,
   refreshLlmProfileModels,
+  probeLlmModel,
   updateLlmProfile,
   type LlmCatalog,
   type LlmProviderHealth,
@@ -39,6 +40,7 @@ export type ModelCatalogDependencies = {
   updateProfile: typeof updateLlmProfile
   deleteProfile: typeof deleteLlmProfile
   refreshProfileModels: typeof refreshLlmProfileModels
+  probeModel: typeof probeLlmModel
   providerHealth: typeof fetchLlmProviderHealth
   projectModels: (projection: ModelProjection) => void
   loadCachedProfiles: () => LlmProviderProfile[]
@@ -147,6 +149,7 @@ export function defaultModelCatalogDependencies(): ModelCatalogDependencies {
     updateProfile: updateLlmProfile,
     deleteProfile: deleteLlmProfile,
     refreshProfileModels: refreshLlmProfileModels,
+    probeModel: probeLlmModel,
     providerHealth: fetchLlmProviderHealth,
     projectModels: (projection) =>
       writeModelsOverride(projection.gatewayRelay, projection.gatewayProfiles),
@@ -328,6 +331,69 @@ export class ModelCatalogCoordinator {
       this.dependencies.refreshProfileModels(connection.relay, connection.key, id),
     )
     return { profile: result.value, warning: result.warning }
+  }
+
+  async verifyDiscoveredModels(
+    id: string,
+  ): Promise<{ verifiedModels: string[]; rejectedModels: string[]; warning?: string }> {
+    const connection = this.requireConnection()
+    const profile = (await this.dependencies.listProfiles(connection.relay, connection.key))
+      .find((item) => item.id === id && item.enabled)
+    if (!profile) throw new Error('找不到已启用的模型线路')
+
+    // 先让服务端剔除明确不可用的旧模型，并取回上游新发现项；新模型逐个临时登记，
+    // 只有最小 chat 请求成功才保留到线路配置和 Pi 模型目录。
+    const refreshed = await this.dependencies.refreshProfileModels(connection.relay, connection.key, id)
+    let currentModels = [...refreshed.models]
+    const rejectedModels: string[] = []
+    const discovered = [...new Set(refreshed.new_models ?? [])]
+      .filter((model) => !currentModels.includes(model))
+
+    if (discovered.length > 0) {
+      const { token } = await this.dependencies.createSessionToken(connection.relay, connection.key)
+      for (const model of discovered) {
+        const stagedModels = [...currentModels, model]
+        await this.dependencies.updateProfile(connection.relay, connection.key, {
+          id: profile.id,
+          display_name: profile.display_name,
+          base_url: profile.base_url ?? '',
+          api_type: profile.api_type,
+          api_key: '',
+          models: stagedModels,
+          enabled: profile.enabled,
+          sort_order: profile.sort_order,
+        })
+
+        let verified = false
+        try {
+          verified = await this.dependencies.probeModel(connection.relay, token, profile.id, model)
+        } catch {
+          verified = false
+        }
+        if (!verified) {
+          rejectedModels.push(model)
+          await this.dependencies.updateProfile(connection.relay, connection.key, {
+            id: profile.id,
+            display_name: profile.display_name,
+            base_url: profile.base_url ?? '',
+            api_type: profile.api_type,
+            api_key: '',
+            models: currentModels,
+            enabled: profile.enabled,
+            sort_order: profile.sort_order,
+          })
+        }
+        if (verified) currentModels = stagedModels
+      }
+    }
+
+    const sync = await this.sync()
+    this.onChanged?.()
+    return {
+      verifiedModels: currentModels,
+      rejectedModels,
+      ...(sync.warning ? { warning: sync.warning } : {}),
+    }
   }
 
   async providerHealth(id: string): Promise<LlmProviderHealth> {

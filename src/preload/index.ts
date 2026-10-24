@@ -27,7 +27,7 @@ const METHODS = {
   diagnostics: ['getLogs', 'save', 'listBackups', 'restoreBackup'],
   settings: ['load', 'save', 'listCloudModels', 'openAdminConsole', 'onChanged'],
   llmProfiles: ['list', 'save', 'delete', 'refreshModels', 'providerHealth'],
-  modelCatalog: ['loadProviderLabels'],
+  modelCatalog: ['loadProviderLabels', 'verifyDiscoveredModels'],
   sandbox: ['detect', 'imageStatus', 'buildImage', 'onBuildProgress'],
   remote: ['getStatus', 'setEnabled', 'generatePairingCode', 'resetPairings', 'onStatus'],
   workspace: ['list', 'pickDirectory', 'open', 'remove'],

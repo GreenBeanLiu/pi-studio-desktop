@@ -110,6 +110,10 @@ export type DesktopApi = {
   }
   modelCatalog: {
     loadProviderLabels: () => Promise<{ ok: true; view: ModelCatalogView } | { error: string }>
+    verifyDiscoveredModels: (id: string) => Promise<
+      | { ok: true; verifiedModels: string[]; rejectedModels: string[]; warning?: string }
+      | { error: string }
+    >
   }
   sandbox: {
     detect: () => Promise<SandboxDetect>

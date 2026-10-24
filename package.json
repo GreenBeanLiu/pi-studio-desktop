@@ -1,6 +1,6 @@
 {
   "name": "pi-studio",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "description": "Pi Studio · Desktop — Electron operator console: hosts the Pi agent runtime, exposes the tool gateway to the control plane, sandbox provider, routines, shared memory",
   "main": "out/main/index.js",
   "scripts": {
