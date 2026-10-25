@@ -4,7 +4,7 @@
  * 原则:renderer 传进来的值一律当 `unknown`。TypeScript 只约束我们自己的代码,
  * 约束不了实际到达 main 的数据 —— 契约错误直接抛 TypeError,由 handler 记日志并拒绝。
  *
- * 沿用 main/ipc-contracts.ts 已有的手写 parser 风格,暂不引入 schema 库。
+ * 手写 parser,暂不引入 schema 库。
  */
 import { resolve, sep } from 'path'
 import { parseAllowedHostList } from '../sandbox-hosts'

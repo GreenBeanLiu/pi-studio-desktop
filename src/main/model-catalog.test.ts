@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ModelCatalogCoordinator, type ModelCatalogDependencies } from './model-catalog'
-import type { LlmProviderHealth, LlmProviderProfile, LlmProfileWrite } from './llm-gateway'
+import type { LlmProviderProfile } from './llm-gateway'
 
 const profile: LlmProviderProfile = {
   id: 'three-a-main',
@@ -22,38 +22,6 @@ const deepSeekProfile: LlmProviderProfile = {
   enabled: true,
   sort_order: 2,
   has_key: true,
-}
-
-const providerHealth: LlmProviderHealth = {
-  id: 'three-a-main',
-  display_name: '3A Main',
-  base_url: 'https://api.3a-api.com/v1',
-  supported: true,
-  ok: true,
-  advertisedModels: ['gpt-5.5'],
-  upstreams: [{ id: 'default', baseUrl: 'https://api.3a-api.com/v1' }],
-  modelRoutes: { 'gpt-5.5': ['default'] },
-  modelMetadata: {},
-  state: {
-    requestCount: 2,
-    failedAttemptCount: 0,
-    lastRequestAt: '2026-08-31T00:00:00.000Z',
-    lastRouteId: 'default',
-    lastStatus: 200,
-    lastError: null,
-    routeStats: {
-      default: {
-        requestCount: 2,
-        successCount: 2,
-        failureCount: 0,
-        failedAttemptCount: 0,
-        lastRequestAt: '2026-08-31T00:00:00.000Z',
-        lastStatus: 200,
-        lastError: null,
-      },
-    },
-    recentFailures: [],
-  },
 }
 
 function dependencies(
@@ -78,16 +46,6 @@ function dependencies(
       scope: 'imagegen:agent' as const,
     })),
     listProfiles: vi.fn(async () => [profile]),
-    createProfile: vi.fn(async (_relay, _key, value: LlmProfileWrite) => ({
-      ...profile,
-      ...value,
-      has_key: true,
-    })),
-    updateProfile: vi.fn(async () => profile),
-    deleteProfile: vi.fn(async () => undefined),
-    refreshProfileModels: vi.fn(async () => profile),
-    probeModel: vi.fn(async () => 'ok' as const),
-    providerHealth: vi.fn(async () => providerHealth),
     projectModels: vi.fn(),
     loadCachedProfiles: vi.fn(() => []),
     saveCachedProfiles: vi.fn(),
@@ -102,33 +60,6 @@ function dependencies(
 }
 
 describe('model catalog coordination', () => {
-  it('projects and publishes one consistent catalog after a profile mutation', async () => {
-    const onChanged = vi.fn()
-    const deps = dependencies()
-    const catalog = new ModelCatalogCoordinator(deps, onChanged)
-
-    const result = await catalog.saveProfile({
-      create: true,
-      profile: {
-        id: 'three-a-main',
-        display_name: '3A Main',
-        base_url: 'https://api.3a-api.com/v1',
-        api_type: 'openai-completions',
-        api_key: 'new-key',
-        models: ['gpt-5.5'],
-        enabled: true,
-        sort_order: 0,
-      },
-    })
-
-    expect(result.profile.id).toBe('three-a-main')
-    expect(deps.projectModels).toHaveBeenCalledOnce()
-    expect(deps.projectModels).toHaveBeenCalledWith(
-      expect.objectContaining({ gatewayProfiles: [profile] }),
-    )
-    expect(onChanged).toHaveBeenCalledOnce()
-  })
-
   it('preserves the last cloud projection when refresh is temporarily unavailable', async () => {
     const deps = dependencies({
       fetchCatalog: vi.fn(async () => {
@@ -293,49 +224,6 @@ describe('model catalog coordination', () => {
     await expect(catalog.loadProviderLabels()).resolves.toEqual({
       providerLabels: { 'three-a-main': '3A Main', 'pi-studio': '模型' },
     })
-  })
-
-  it('loads provider health through the configured cloud gateway', async () => {
-    const deps = dependencies()
-    const catalog = new ModelCatalogCoordinator(deps)
-
-    await expect(catalog.providerHealth('three-a-main')).resolves.toEqual(providerHealth)
-    expect(deps.providerHealth).toHaveBeenCalledWith(
-      'https://trail-api.glanger.xyz',
-      'desktop-key',
-      'three-a-main',
-    )
-  })
-
-  it('only keeps upstream discoveries in the Pi catalog after a successful chat probe', async () => {
-    let remoteProfile = profile
-    const updateProfile = vi.fn(async (_relay, _key, update: LlmProfileWrite) => {
-      remoteProfile = { ...remoteProfile, ...update, has_key: true }
-      return remoteProfile
-    })
-    const deps = dependencies({
-      listProfiles: vi.fn(async () => [remoteProfile]),
-      fetchCatalog: vi.fn(async () => ({ providers: [remoteProfile] })),
-      refreshProfileModels: vi.fn(async () => ({
-        ...profile,
-        new_models: ['gpt-6.1-sol', 'gpt-5.6-luna'],
-      })),
-      updateProfile,
-      probeModel: vi.fn(async (_relay, _token, _provider, model) => model === 'gpt-5.6-luna' ? 'missing' : 'ok'),
-    })
-    const catalog = new ModelCatalogCoordinator(deps)
-
-    await expect(catalog.verifyDiscoveredModels(profile.id)).resolves.toEqual({
-      models: ['gpt-5.5', 'gpt-6.1-sol'],
-      verifiedModels: ['gpt-5.5', 'gpt-6.1-sol'],
-      rejectedModels: ['gpt-5.6-luna'],
-      unverifiedModels: [],
-    })
-    expect(remoteProfile.models).toEqual(['gpt-5.5', 'gpt-6.1-sol'])
-    expect(deps.projectModels).toHaveBeenLastCalledWith(
-      expect.objectContaining({ gatewayProfiles: [remoteProfile] }),
-    )
-    expect(updateProfile).toHaveBeenCalledTimes(3)
   })
 
   it('loads provider labels from the last valid cache when the gateway is offline', async () => {

@@ -2,20 +2,13 @@ import { getCloudConnection, type CloudConnection } from './cloud-connection'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import {
-  createLlmProfile,
   createImageAgentToken,
   createLlmSessionToken,
-  deleteLlmProfile,
   fetchLlmCatalog,
   fetchLlmModels,
-  fetchLlmProviderHealth,
   listLlmProfiles,
-  refreshLlmProfileModels,
-  probeLlmModel,
-  updateLlmProfile,
   type GatewayModelEntry,
   type LlmCatalog,
-  type LlmProviderHealth,
   type LlmProviderProfile,
 } from './llm-gateway'
 import {
@@ -25,7 +18,7 @@ import {
   migrateDirectProviderRetirement,
   migrateToModelKeys,
 } from './settings'
-import type { LlmModelMetadata, LlmProfileSavePayload, ModelCatalogView } from '../shared/contracts'
+import type { LlmModelMetadata, ModelCatalogView } from '../shared/contracts'
 import { DEEPSEEK_PROFILE_ID } from '../shared/deepseek-profile'
 import { GATEWAY_MODEL_PROVIDER, GATEWAY_MODEL_PROVIDER_LABEL } from '../shared/model-route'
 
@@ -43,12 +36,6 @@ export type ModelCatalogDependencies = {
   createSessionToken: typeof createLlmSessionToken
   createImageAgentToken: typeof createImageAgentToken
   listProfiles: typeof listLlmProfiles
-  createProfile: typeof createLlmProfile
-  updateProfile: typeof updateLlmProfile
-  deleteProfile: typeof deleteLlmProfile
-  refreshProfileModels: typeof refreshLlmProfileModels
-  probeModel: typeof probeLlmModel
-  providerHealth: typeof fetchLlmProviderHealth
   projectModels: (projection: ModelProjection) => void
   loadCachedProfiles: () => LlmProviderProfile[]
   saveCachedProfiles: (profiles: LlmProviderProfile[]) => void
@@ -198,12 +185,6 @@ export function defaultModelCatalogDependencies(): ModelCatalogDependencies {
     createSessionToken: createLlmSessionToken,
     createImageAgentToken,
     listProfiles: listLlmProfiles,
-    createProfile: createLlmProfile,
-    updateProfile: updateLlmProfile,
-    deleteProfile: deleteLlmProfile,
-    refreshProfileModels: refreshLlmProfileModels,
-    probeModel: probeLlmModel,
-    providerHealth: fetchLlmProviderHealth,
     projectModels: (projection) =>
       writeModelsOverride(projection.gatewayRelay, projection.gatewayProfiles, projection.gatewayModels),
     loadCachedProfiles: loadCatalogCache,
@@ -396,150 +377,6 @@ export class ModelCatalogCoordinator {
 
   loadCachedProviderLabels(): ModelCatalogView {
     return providerLabelView(validProfiles(this.dependencies.loadCachedProfiles()))
-  }
-
-  private async mutateAndPublish<T>(mutation: () => Promise<T>): Promise<{
-    value: T
-    warning?: string
-  }> {
-    const value = await mutation()
-    const sync = await this.sync()
-    this.onChanged?.()
-    return { value, warning: sync.warning }
-  }
-
-  async saveProfile(
-    payload: LlmProfileSavePayload,
-  ): Promise<{ profile: LlmProviderProfile; warning?: string }> {
-    const connection = this.requireConnection()
-    const result = await this.mutateAndPublish(() =>
-      payload.create
-        ? this.dependencies.createProfile(connection.relay, connection.key, payload.profile)
-        : this.dependencies.updateProfile(connection.relay, connection.key, payload.profile),
-    )
-    return { profile: result.value, warning: result.warning }
-  }
-
-  async deleteProfile(id: string): Promise<{ warning?: string }> {
-    const connection = this.requireConnection()
-    const result = await this.mutateAndPublish(() =>
-      this.dependencies.deleteProfile(connection.relay, connection.key, id),
-    )
-    return { warning: result.warning }
-  }
-
-  async refreshProfileModels(
-    id: string,
-  ): Promise<{ profile: LlmProviderProfile; warning?: string }> {
-    const connection = this.requireConnection()
-    const result = await this.mutateAndPublish(() =>
-      this.dependencies.refreshProfileModels(connection.relay, connection.key, id),
-    )
-    return { profile: result.value, warning: result.warning }
-  }
-
-  async verifyDiscoveredModels(
-    id: string,
-  ): Promise<{
-    models: string[]
-    verifiedModels: string[]
-    rejectedModels: string[]
-    unverifiedModels: string[]
-    warning?: string
-  }> {
-    const connection = this.requireConnection()
-    const profile = (await this.dependencies.listProfiles(connection.relay, connection.key))
-      .find((item) => item.id === id && item.enabled)
-    if (!profile) throw new Error('找不到已启用的模型线路')
-
-    // 先让服务端剔除明确不可用的旧模型，并取回上游新发现项；新模型逐个临时登记，
-    // 只有最小 chat 请求成功才加入。已配置的模型只在上游明确说"模型不存在"时才删:
-    // key 失效、限流、5xx、超时、参数不兼容都只算没测出来，原样保留。
-    const refreshed = await this.dependencies.refreshProfileModels(connection.relay, connection.key, id)
-    const configuredModels = [...new Set(refreshed.models)]
-    const verifiedModels: string[] = []
-    const rejectedModels: string[] = []
-    const unverifiedModels: string[] = []
-    const candidates = [...new Set([...configuredModels, ...(refreshed.new_models ?? [])])]
-    const { token } = await this.dependencies.createSessionToken(connection.relay, connection.key)
-    let nextModels = configuredModels
-
-    try {
-      for (const model of candidates) {
-        // New discoveries must be temporarily added so the gateway can route the probe.
-        if (!configuredModels.includes(model)) {
-          await this.dependencies.updateProfile(connection.relay, connection.key, {
-            id: profile.id,
-            display_name: profile.display_name,
-            base_url: profile.base_url ?? '',
-            api_type: profile.api_type,
-            api_key: '',
-            models: [...configuredModels, model],
-            enabled: profile.enabled,
-            sort_order: profile.sort_order,
-          })
-        }
-        const probe = await this.dependencies.probeModel(connection.relay, token, profile.id, model)
-        if (probe === 'ok') verifiedModels.push(model)
-        else if (probe === 'missing') rejectedModels.push(model)
-        else unverifiedModels.push(model)
-      }
-
-      // 每个模型都被判"不存在"更像线路本身配错了(base_url、上游换了路径),不是模型
-      // 全下架了;这时不动配置，让用户去看线路。
-      if (configuredModels.length > 0 && rejectedModels.length === candidates.length) {
-        throw new Error('所有模型都被上游判定为不存在，疑似线路配置有误，已保留原有模型列表')
-      }
-
-      nextModels = candidates.filter((model) =>
-        verifiedModels.includes(model)
-        || (unverifiedModels.includes(model) && configuredModels.includes(model)))
-      await this.dependencies.updateProfile(connection.relay, connection.key, {
-        id: profile.id,
-        display_name: profile.display_name,
-        base_url: profile.base_url ?? '',
-        api_type: profile.api_type,
-        api_key: '',
-        models: nextModels,
-        enabled: profile.enabled,
-        sort_order: profile.sort_order,
-      })
-    } catch (error) {
-      // A transport/token failure says nothing about model health. Restore the last
-      // committed list before surfacing it so temporary staging never leaks.
-      try {
-        await this.dependencies.updateProfile(connection.relay, connection.key, {
-          id: profile.id,
-          display_name: profile.display_name,
-          base_url: profile.base_url ?? '',
-          api_type: profile.api_type,
-          api_key: '',
-          models: configuredModels,
-          enabled: profile.enabled,
-          sort_order: profile.sort_order,
-        })
-      } catch (restoreError) {
-        throw new Error(
-          `${(error as Error).message ?? String(error)}；恢复原模型列表也失败了：${(restoreError as Error).message ?? String(restoreError)}`,
-        )
-      }
-      throw error
-    }
-
-    const sync = await this.sync()
-    this.onChanged?.()
-    return {
-      models: nextModels,
-      verifiedModels,
-      rejectedModels,
-      unverifiedModels,
-      ...(sync.warning ? { warning: sync.warning } : {}),
-    }
-  }
-
-  async providerHealth(id: string): Promise<LlmProviderHealth> {
-    const connection = this.requireConnection()
-    return this.dependencies.providerHealth(connection.relay, connection.key, id)
   }
 
   private requireConnection(): Extract<CloudConnection, { available: true }> {

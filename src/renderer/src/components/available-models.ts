@@ -28,18 +28,6 @@ function toModelInfo(
   }
 }
 
-export function buildAvailableModelRoutes(
-  profiles: readonly LlmProviderProfile[],
-  discoveredRoutes: readonly string[],
-): string[] {
-  return [...new Set([
-    ...profiles
-      .filter((profile) => profile.enabled)
-      .flatMap((profile) => profile.models.map((model) => `${profile.id}::${model.trim()}`)),
-    ...discoveredRoutes,
-  ])]
-}
-
 /** Runtime registry snapshots can lag behind cloud profile updates. Keep its
  * metadata where present, and fill missing routes from the synced catalog.
  *

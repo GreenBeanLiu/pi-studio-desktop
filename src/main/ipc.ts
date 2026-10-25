@@ -48,7 +48,6 @@ import { getCloudConnection, getDraftCloudConnection } from './cloud-connection'
 import { workspaceInventory } from './workspace-inventory'
 import { fetchLlmCatalog, listEnabledLlmRoutes } from './llm-gateway'
 import { ModelCatalogCoordinator } from './model-catalog'
-import { parseLlmProfileId, parseLlmProfileSavePayload } from './ipc-contracts'
 import {
   isRecord,
   oneOf,
@@ -399,46 +398,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('modelCatalog:listModels', () => {
     try {
       return { ok: true, models: modelCatalog.listCachedModels() }
-    } catch (err) {
-      return { error: (err as Error).message ?? String(err) }
-    }
-  })
-  ipcMain.handle('modelCatalog:verifyDiscoveredModels', async (_event, id: unknown) => {
-    try {
-      return { ok: true, ...(await modelCatalog.verifyDiscoveredModels(parseLlmProfileId(id))) }
-    } catch (err) {
-      return { error: (err as Error).message ?? String(err) }
-    }
-  })
-  ipcMain.handle(
-    'llmProfiles:save',
-    async (_event, payload: unknown) => {
-      try {
-        const result = await modelCatalog.saveProfile(parseLlmProfileSavePayload(payload))
-        return { ok: true, profile: result.profile, warning: result.warning }
-      } catch (err) {
-        return { error: (err as Error).message ?? String(err) }
-      }
-    },
-  )
-  ipcMain.handle('llmProfiles:delete', async (_event, id: string) => {
-    try {
-      return { ok: true, ...(await modelCatalog.deleteProfile(id)) }
-    } catch (err) {
-      return { error: (err as Error).message ?? String(err) }
-    }
-  })
-  ipcMain.handle('llmProfiles:refreshModels', async (_event, id: string) => {
-    try {
-      const result = await modelCatalog.refreshProfileModels(id)
-      return { ok: true, profile: result.profile, warning: result.warning }
-    } catch (err) {
-      return { error: (err as Error).message ?? String(err) }
-    }
-  })
-  ipcMain.handle('llmProfiles:providerHealth', async (_event, id: string) => {
-    try {
-      return { ok: true, health: await modelCatalog.providerHealth(id) }
     } catch (err) {
       return { error: (err as Error).message ?? String(err) }
     }
