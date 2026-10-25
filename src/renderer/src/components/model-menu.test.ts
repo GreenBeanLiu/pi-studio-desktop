@@ -242,3 +242,15 @@ describe('servedByLabel', () => {
     expect(servedByLabel(served, null, gateway)).toBeNull()
   })
 })
+
+describe('served-by route only (tooltip row already labelled)', () => {
+  it('returns the route name without the sentence around it', async () => {
+    const { servedByRoute, servedByLabel } = await import('./model-menu')
+    const servedBy = { provider: 'pi-studio', modelId: 'gpt-6-sol', profileId: 'heilovehei' }
+    const current = { provider: 'pi-studio', id: 'gpt-6-sol' }
+    const keys = [{ routes: [{ profile_id: 'heilovehei', display_name: 'heilovehei' }] }]
+    expect(servedByRoute(servedBy, current, keys)).toBe('heilovehei')
+    expect(servedByLabel(servedBy, current, keys)).toBe('最近由 heilovehei 回复')
+    expect(servedByRoute(servedBy, { provider: 'pi-studio', id: 'other' }, keys)).toBeNull()
+  })
+})

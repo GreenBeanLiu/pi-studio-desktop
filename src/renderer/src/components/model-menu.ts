@@ -191,6 +191,16 @@ export function servedByLabel(
   currentModel: { provider: string; id: string } | null,
   gatewayModels: ReadonlyArray<{ routes: ReadonlyArray<{ profile_id: string; display_name: string }> }>,
 ): string | null {
+  const route = servedByRoute(servedBy, currentModel, gatewayModels)
+  return route ? `最近由 ${route} 回复` : null
+}
+
+/** 只要线路那一段(「heilovehei」「heilovehei(上游 x)」),给已经带了标签的地方用，比如悬浮信息的「最近回复：」。 */
+export function servedByRoute(
+  servedBy: ServedByView | null,
+  currentModel: { provider: string; id: string } | null,
+  gatewayModels: ReadonlyArray<{ routes: ReadonlyArray<{ profile_id: string; display_name: string }> }>,
+): string | null {
   if (!servedBy || !currentModel) return null
   if (servedBy.provider !== currentModel.provider || servedBy.modelId !== currentModel.id) return null
   let name = servedBy.profileId
@@ -203,5 +213,5 @@ export function servedByLabel(
   }
   const upstream =
     servedBy.upstreamModel && servedBy.upstreamModel !== currentModel.id ? `(上游 ${servedBy.upstreamModel})` : ''
-  return `最近由 ${name}${upstream} 回复`
+  return `${name}${upstream}`
 }

@@ -49,6 +49,7 @@ import {
   buildModelMenuGroups,
   modelRouteSummary,
   servedByLabel,
+  servedByRoute,
   type ServedByView,
 } from './model-menu'
 import { mergeAvailableModelInfo } from './available-models'
@@ -1212,8 +1213,8 @@ export default function ChatPane({
     if (routes) {
       // 按模型键的条目:线路由网关选，显示登记的顺序，而不是网关自己的地址
       rows.push(['线路', routes])
-      const recent = servedByLabel(servedBy, { provider: m.provider, id: m.id }, gatewayModels)
-      if (recent && currentModel?.provider === m.provider && currentModel.id === m.id) rows.push(['最近', recent])
+      const recent = servedByRoute(servedBy, { provider: m.provider, id: m.id }, gatewayModels)
+      if (recent && currentModel?.provider === m.provider && currentModel.id === m.id) rows.push(['最近回复', recent])
     } else {
       rows.push(['服务商', m.provider])
       if (host) rows.push(['接入点', host])
