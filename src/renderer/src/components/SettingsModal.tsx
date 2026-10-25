@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
 import { createStyles, cx } from 'antd-style'
 import { Alert, App as AntApp, Input, Button, Modal, Select, Switch, Tag, Popconfirm } from 'antd'
-import { Activity, Bot, Globe, Info, Trash2, Plus, Image as ImageIcon, Pencil, RefreshCw } from 'lucide-react'
+import { Bot, Globe, Info, Trash2, Plus, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import {
   api,
   type Channel,
   type ChannelType,
   type SettingsView,
-  type LlmProviderHealth,
-  type LlmProfileWrite,
   type LlmProviderProfile,
-  type ProviderConnectionResult,
   type SandboxDetect,
   type SandboxImageStatus,
   type RemoteControlSnapshot,
@@ -19,30 +16,14 @@ import {
   type RuntimeEventLogSnapshot,
   type RuntimeRunSummary,
 } from '../lib/api'
-import { createDefaultSettingsView } from '../../../shared/contracts'
-import {
-  DEEPSEEK_OFFICIAL_MODELS,
-  DEEPSEEK_PROFILE_ID,
-  createDeepSeekProfileWrite,
-} from '../../../shared/deepseek-profile'
-import {
-  favoriteRouteKey,
-  formatFavoriteModelRoutes,
-  parseFavoriteModelRoutes,
-} from '../../../shared/model-route'
-import { buildAvailableModelRoutes } from './available-models'
+import { createDefaultSettingsView, type GatewayModelEntry } from '../../../shared/contracts'
+import { parseFavoriteModelRoutes } from '../../../shared/model-route'
+import { buildFavoriteModelOptions } from './available-models'
 import { QRCodeSVG } from 'qrcode.react'
 
 type Settings = SettingsView & { clearCloudImageKey?: boolean }
-type ModelFetchResult =
-  | { ok: true; message: string; models: string[]; details?: string }
-  | { ok: false; message: string; details?: string }
-
-type LlmProfileDraft = Omit<LlmProfileWrite, 'models'> & { models: string[]; create: boolean }
-
-// 云端线路管理界面已开放:用于维护 provider 分组、同步模型、查看 Cloudflare Agent health。
+// 线路管理只在管理台(D7,T3.3):这里只读列出线路和模型键，给「去管理台」入口。
 // 本地直连已于 2026-08-19 整体退役,不再有可恢复的开关。
-const SHOW_CLOUD_LANE_ADMIN: boolean = true
 
 // 安全策略分类已移除(2026-07-17):隔离职责交给沙箱(WSL2+bubblewrap),
 // 规则式软拦截(securityGuard/策略编辑器)不再暴露,后端代码保留但不启用。
@@ -81,48 +62,6 @@ function runtimeRunName(run: RuntimeRunSummary): string {
   const kind = run.kind ?? 'unknown'
   const model = run.model ? ` · ${run.model}` : ''
   return `${kind}${model}`
-}
-
-function formatLlmProviderHealth(health: LlmProviderHealth): string {
-  if (!health.supported) {
-    return `这条线路还没有 provider health 端点。\n\n${health.error}`
-  }
-
-  const state = health.state
-  const routeLines = Object.entries(state.routeStats).map(([routeId, stats]) => {
-    const successRate = stats.requestCount > 0
-      ? `，成功率 ${Math.round((stats.successCount / stats.requestCount) * 100)}%`
-      : ''
-    const lastStatus = stats.lastStatus === undefined || stats.lastStatus === null
-      ? ''
-      : `，最后状态 ${stats.lastStatus}`
-    const lastError = stats.lastError ? `，最后错误 ${stats.lastError}` : ''
-    return `${routeId}: 请求 ${stats.requestCount}，成功 ${stats.successCount}，失败 ${stats.failureCount}，失败尝试 ${stats.failedAttemptCount}${successRate}${lastStatus}${lastError}`
-  })
-  const failureLines = state.recentFailures.slice(0, 6).map((failure) => {
-    const at = formatRuntimeTimestamp(failure.at ?? null)
-    const route = failure.routeId ?? 'unknown-route'
-    const model = failure.model ?? 'unknown-model'
-    const status = failure.status === undefined ? '无状态码' : `HTTP ${failure.status}`
-    const message = failure.message ? `: ${failure.message}` : ''
-    return `${at} · ${route} · ${model} · ${status}${message}`
-  })
-
-  return [
-    `状态: ${health.ok ? 'ok' : 'degraded'}`,
-    `总请求: ${state.requestCount}`,
-    `失败尝试: ${state.failedAttemptCount}`,
-    `最后请求: ${formatRuntimeTimestamp(state.lastRequestAt ?? null)}`,
-    `最后路由: ${state.lastRouteId ?? '暂无'}`,
-    `暴露模型: ${health.advertisedModels.length}`,
-    `上游线路: ${health.upstreams.length}`,
-    '',
-    'Route stats',
-    routeLines.length > 0 ? routeLines.join('\n') : '暂无 route stats',
-    '',
-    'Recent failures',
-    failureLines.length > 0 ? failureLines.join('\n') : '最近没有失败记录',
-  ].join('\n')
 }
 
 const useStyles = createStyles(({ token, css }) => ({
@@ -379,9 +318,6 @@ export default function SettingsModal({
   const [saving, setSaving] = useState(false)
   const [version, setVersion] = useState('')
   const [piVersion, setPiVersion] = useState('')
-  const [fetchingModels, setFetchingModels] = useState(false)
-  const [modelFetchResult, setModelFetchResult] = useState<ModelFetchResult | null>(null)
-  const [cloudCatalogModels, setCloudCatalogModels] = useState<string[]>([])
   const [channels, setChannels] = useState<Channel[]>([])
   const [channelDraft, setChannelDraft] = useState<Channel | null>(null)
   const [channelTesting, setChannelTesting] = useState<string | null>(null)
@@ -405,12 +341,7 @@ export default function SettingsModal({
   const [llmProfiles, setLlmProfiles] = useState<LlmProviderProfile[]>([])
   const [llmProfilesLoading, setLlmProfilesLoading] = useState(false)
   const [llmProfilesError, setLlmProfilesError] = useState('')
-  const [llmProfileHealthLoading, setLlmProfileHealthLoading] = useState<string | null>(null)
-  const [llmProfileDraft, setLlmProfileDraft] = useState<LlmProfileDraft | null>(null)
-  const [llmProfileSaving, setLlmProfileSaving] = useState(false)
-  const [deepSeekApiKey, setDeepSeekApiKey] = useState('')
-  const [deepSeekSaving, setDeepSeekSaving] = useState(false)
-  const [deepSeekResult, setDeepSeekResult] = useState<ProviderConnectionResult | null>(null)
+  const [gatewayModels, setGatewayModels] = useState<GatewayModelEntry[]>([])
   const [sharedMemoryStatus, setSharedMemoryStatus] = useState<{ url: string; file: string; count: number } | null>(null)
   const [backups, setBackups] = useState<LocalBackupSummary[]>([])
   const [selectedBackup, setSelectedBackup] = useState<string>()
@@ -557,127 +488,36 @@ export default function SettingsModal({
     }
   }
 
+  // 线路和模型都只读(D7):增删改、刷新、验证在管理台的「模型线路」页。
   async function loadLlmProfiles() {
     setLlmProfilesLoading(true)
     setLlmProfilesError('')
     try {
-      const result = await api.llmProfiles.list()
-      if ('error' in result) {
-        setLlmProfilesError(result.error)
+      const [profilesResult, modelsResult] = await Promise.allSettled([
+        api.llmProfiles.list(),
+        api.modelCatalog.listModels(),
+      ])
+      if (modelsResult.status === 'fulfilled' && 'models' in modelsResult.value) {
+        setGatewayModels(modelsResult.value.models)
+      }
+      if (profilesResult.status === 'rejected') {
+        setLlmProfilesError(String(profilesResult.reason))
         return
       }
-      setLlmProfiles(result.profiles)
+      if ('error' in profilesResult.value) {
+        setLlmProfilesError(profilesResult.value.error)
+        return
+      }
+      setLlmProfiles(profilesResult.value.profiles)
     } finally {
       setLlmProfilesLoading(false)
     }
   }
 
-  function addLlmProfile() {
-    setLlmProfileDraft({
-      id: '',
-      display_name: '',
-      base_url: '',
-      api_type: 'openai-completions',
-      api_key: '',
-      models: [],
-      enabled: true,
-      sort_order: llmProfiles.length,
-      create: true,
-    })
-  }
-
-  function editLlmProfile(profile: LlmProviderProfile) {
-    setLlmProfileDraft({
-      id: profile.id,
-      display_name: profile.display_name,
-      base_url: profile.base_url ?? '',
-      api_type: profile.api_type,
-      api_key: '',
-      models: [...profile.models],
-      enabled: profile.enabled,
-      sort_order: profile.sort_order,
-      create: false,
-    })
-  }
-
-  async function saveLlmProfile() {
-    if (!llmProfileDraft) return
-    setLlmProfileSaving(true)
-    setLlmProfilesError('')
-    try {
-      const { create, ...profile } = llmProfileDraft
-      const result = await api.llmProfiles.save(
-        create ? { profile, create: true } : { profile, create: false },
-      )
-      if ('error' in result) {
-        setLlmProfilesError(result.error)
-        return
-      }
-      setLlmProfileDraft(null)
-      await loadLlmProfiles()
-      if (result.warning) setLlmProfilesError(result.warning)
-    } finally {
-      setLlmProfileSaving(false)
-    }
-  }
-
-  async function removeLlmProfile(id: string) {
-    const result = await api.llmProfiles.delete(id)
-    if ('error' in result) setLlmProfilesError(result.error)
-    else {
-      await loadLlmProfiles()
-      if (result.warning) setLlmProfilesError(result.warning)
-    }
-  }
-
-  async function refreshLlmModels(id: string) {
-    setLlmProfilesLoading(true)
-    try {
-      const result = await api.modelCatalog.verifyDiscoveredModels(id)
-      if ('error' in result) setLlmProfilesError(result.error)
-      else {
-        await loadLlmProfiles()
-        setCloudCatalogModels(result.models.map((model) => `${id}::${model}`))
-        setLlmProfileDraft((draft) => draft?.id === id
-          ? { ...draft, models: result.models }
-          : draft)
-        if (result.rejectedModels.length > 0) {
-          message.warning(`上游确认不存在，已移除：${result.rejectedModels.join('、')}`)
-        }
-        if (result.unverifiedModels.length > 0) {
-          message.warning(`暂时没测出结果（已有的保留，新发现的未加入）：${result.unverifiedModels.join('、')}`)
-        }
-        if (result.verifiedModels.length > 0) {
-          message.success(`已验证 ${result.verifiedModels.length} 个模型并同步到切换器`)
-        }
-        if (result.warning) setLlmProfilesError(result.warning)
-      }
-    } finally {
-      setLlmProfilesLoading(false)
-    }
-  }
-
-  async function showLlmProviderHealth(profile: LlmProviderProfile) {
-    setLlmProfileHealthLoading(profile.id)
-    setLlmProfilesError('')
-    try {
-      const result = await api.llmProfiles.providerHealth(profile.id)
-      if ('error' in result) {
-        setLlmProfilesError(result.error)
-        return
-      }
-      Modal.info({
-        title: `${profile.display_name} 线路健康`,
-        width: 680,
-        content: (
-          <pre className={styles.mono} style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {formatLlmProviderHealth(result.health)}
-          </pre>
-        ),
-      })
-    } finally {
-      setLlmProfileHealthLoading(null)
-    }
+  async function openAdminConsole() {
+    const result = await api.settings.openAdminConsole()
+    if ('error' in result) message.error(`打不开管理台：${result.error}`)
+    else message.success('已在浏览器里打开管理台（登录 12 小时有效）')
   }
 
   async function resetRemotePairings() {
@@ -696,63 +536,6 @@ export default function SettingsModal({
     }
   }
 
-  async function saveDeepSeekOfficial() {
-    const existing = llmProfiles.find((profile) => profile.id === DEEPSEEK_PROFILE_ID)
-    const apiKey = deepSeekApiKey.trim()
-    if (!existing && !apiKey) return
-    setDeepSeekSaving(true)
-    setDeepSeekResult(null)
-    try {
-      const profile = createDeepSeekProfileWrite(
-        apiKey,
-        existing?.sort_order ?? llmProfiles.length,
-      )
-      const result = await api.llmProfiles.save(
-        existing ? { create: false, profile } : { create: true, profile },
-      )
-      if ('error' in result) {
-        setDeepSeekResult({
-          ok: false,
-          message: 'DeepSeek 配置失败',
-          details: result.error,
-        })
-        return
-      }
-      setDeepSeekApiKey('')
-      await loadLlmProfiles()
-      setSettings((current) => {
-        const routes = parseFavoriteModelRoutes(current.favoriteModels, DEEPSEEK_PROFILE_ID)
-        const seen = new Set(
-          routes.map((route) => favoriteRouteKey(route.provider, route.model)),
-        )
-        for (const model of DEEPSEEK_OFFICIAL_MODELS) {
-          const route = { provider: DEEPSEEK_PROFILE_ID, model }
-          const key = favoriteRouteKey(route.provider, route.model)
-          if (!seen.has(key)) {
-            seen.add(key)
-            routes.push(route)
-          }
-        }
-        return { ...current, favoriteModels: formatFavoriteModelRoutes(routes) }
-      })
-      setDeepSeekResult({
-        ok: true,
-        message: existing ? 'DeepSeek 官方线路已更新' : 'DeepSeek 官方线路已接入',
-        details:
-          result.warning ||
-          '点击底部“保存设置”后，两个 V4 模型会出现在聊天页的模型切换器中。',
-      })
-    } catch (error) {
-      setDeepSeekResult({
-        ok: false,
-        message: 'DeepSeek 配置失败',
-        details: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setDeepSeekSaving(false)
-    }
-  }
-
   async function handleSave() {
     setSaving(true)
     try {
@@ -767,9 +550,7 @@ export default function SettingsModal({
 
   function patch(update: Partial<Settings>) {
     setSettings((s) => ({ ...s, ...update }))
-    setModelFetchResult(null)
   }
-
 
   const CHANNEL_TYPE_LABEL: Record<ChannelType, string> = {
     'feishu-webhook': '飞书群机器人',
@@ -820,65 +601,9 @@ export default function SettingsModal({
     }
   }
 
-  async function handleFetchModels() {
-    setFetchingModels(true)
-    setModelFetchResult(null)
-    try {
-      const profiles = llmProfiles.filter((profile) => profile.enabled)
-      if (profiles.length === 0) {
-        setModelFetchResult({ ok: false, message: '没有已启用的 provider' })
-        return
-      }
-      const routes = new Set<string>()
-      const errors: string[] = []
-      const rejected: string[] = []
-      const unverified: string[] = []
-      for (const profile of profiles) {
-        const result = await api.modelCatalog.verifyDiscoveredModels(profile.id)
-        if ('error' in result) {
-          errors.push(`${profile.display_name}: ${result.error}`)
-          continue
-        }
-        for (const model of result.models) routes.add(`${profile.id}::${model}`)
-        rejected.push(...result.rejectedModels.map((model) => `${profile.display_name}: ${model}（不存在）`))
-        unverified.push(...result.unverifiedModels.map((model) => `${profile.display_name}: ${model}（未测出）`))
-      }
-      const models = [...routes]
-      const details = [...errors, ...rejected, ...unverified]
-      setCloudCatalogModels(models)
-      await loadLlmProfiles()
-      if (models.length === 0) {
-        setModelFetchResult({
-          ok: false,
-          message: '没有读取到模型',
-          ...(details.length > 0 ? { details: details.join('\n') } : {}),
-        })
-        return
-      }
-      const notes = [
-        rejected.length > 0 ? `${rejected.length} 个已确认不存在` : '',
-        unverified.length > 0 ? `${unverified.length} 个暂时没测出` : '',
-      ].filter(Boolean).join('，')
-      setModelFetchResult({
-        message: errors.length > 0
-          ? `可用 ${models.length} 个模型；${errors.length} 条线路读取失败`
-          : `可用 ${models.length} 个模型${notes ? `，${notes}` : ''}`,
-        ok: true,
-        models,
-        ...(details.length > 0 ? { details: details.join('\n') } : {}),
-      })
-    } catch (err) {
-      setModelFetchResult({
-        ok: false,
-        message: '模型读取失败',
-        details: (err as Error).message ?? String(err),
-      })
-    } finally {
-      setFetchingModels(false)
-    }
-  }
-
-  const allAvailableModels = buildAvailableModelRoutes(llmProfiles, cloudCatalogModels)
+  const adminConsoleReady = settings.cloudImageKeyConfigured && !settings.clearCloudImageKey
+  const favoriteValues = parseFavoriteModelRoutes(settings.favoriteModels, 'openai')
+    .map((route) => `${route.provider}::${route.model}`)
 
   return (
     <Modal
@@ -955,80 +680,26 @@ export default function SettingsModal({
                 <span className={styles.labelHint}>模型线路由云端统一下发，无需在本地配置。</span>
                 <Button
                   size="small"
-                  disabled={!settings.cloudImageKeyConfigured || settings.clearCloudImageKey}
-                  onClick={async () => {
-                    const result = await api.settings.openAdminConsole()
-                    if ('error' in result) message.error(`打不开管理台：${result.error}`)
-                    else message.success('已在浏览器里打开管理台（登录 12 小时有效）')
-                  }}
+                  disabled={!adminConsoleReady}
+                  onClick={openAdminConsole}
                 >
-                  打开管理台（生图、视频、3D 供应商的 key 和开关）
+                  打开管理台（模型线路，生图、视频、3D 供应商的 key 和开关）
                 </Button>
               </div>
 
               <div className={styles.section}>
                 <span className={styles.label}>
-                  DeepSeek 官方 API
-                  {llmProfiles.some((profile) => profile.id === DEEPSEEK_PROFILE_ID) && (
-                    <Tag color="green">已接入</Tag>
-                  )}
+                  模型线路
                   <span className={styles.labelHint}>
-                    Key 仅发送到 Pi Studio 云服务并加密保存，不会写入本机模型配置。
+                    线路、上游 Key(包括 DeepSeek 官方 Key)、模型登记和主备顺序都在管理台的「模型线路」页管理，这里只读
                   </span>
                 </span>
-                <Input.Password
-                  value={deepSeekApiKey}
-                  onChange={(event) => {
-                    setDeepSeekApiKey(event.target.value)
-                    setDeepSeekResult(null)
-                  }}
-                  placeholder={
-                    llmProfiles.some((profile) => profile.id === DEEPSEEK_PROFILE_ID)
-                      ? '已配置；输入新 Key 可替换，留空可刷新线路配置'
-                      : 'sk-…（DeepSeek 开放平台 API Key）'
-                  }
-                />
                 <div className={styles.actionRow}>
-                  <Button
-                    size="small"
-                    type="primary"
-                    loading={deepSeekSaving}
-                    disabled={
-                      !deepSeekApiKey.trim() &&
-                      !llmProfiles.some((profile) => profile.id === DEEPSEEK_PROFILE_ID)
-                    }
-                    onClick={saveDeepSeekOfficial}
-                  >
-                    {llmProfiles.some((profile) => profile.id === DEEPSEEK_PROFILE_ID)
-                      ? '更新线路'
-                      : '接入 DeepSeek'}
-                  </Button>
-                  <span className={styles.labelHint}>
-                    {DEEPSEEK_OFFICIAL_MODELS.join(' · ')}
-                  </span>
-                </div>
-                {deepSeekResult && (
-                  <Alert
-                    type={deepSeekResult.ok ? 'success' : 'error'}
-                    showIcon
-                    message={deepSeekResult.message}
-                    description={deepSeekResult.details}
-                  />
-                )}
-              </div>
-
-              {SHOW_CLOUD_LANE_ADMIN && (
-              <div className={styles.section}>
-                <span className={styles.label}>
-                  云端模型线路
-                  <span className={styles.labelHint}>每条线路会成为模型切换器中的一个 provider 分组</span>
-                </span>
-                <div className={styles.actionRow}>
-                  <Button size="small" type="primary" icon={<Plus size={13} />} onClick={addLlmProfile}>
-                    添加线路
+                  <Button size="small" type="primary" disabled={!adminConsoleReady} onClick={openAdminConsole}>
+                    去管理台
                   </Button>
                   <Button size="small" icon={<RefreshCw size={13} />} loading={llmProfilesLoading} onClick={loadLlmProfiles}>
-                    刷新
+                    重新读取
                   </Button>
                 </div>
                 {llmProfilesError && <Alert type="warning" showIcon message={llmProfilesError} />}
@@ -1038,89 +709,52 @@ export default function SettingsModal({
                       <div className={styles.profileTitle}>
                         <strong>{profile.display_name}</strong>
                         <Tag color={profile.enabled ? 'green' : 'default'}>{profile.id}</Tag>
-                        <Tag>{profile.models.length} 个已配置</Tag>
+                        {!profile.enabled && <Tag>已停用</Tag>}
+                        <Tag>{profile.models.length} 个模型</Tag>
                       </div>
                       <span className={styles.labelHint}>
                         {profile.models.length > 0 ? profile.models.join(' · ') : '尚未配置模型'}
                       </span>
                     </div>
-                    <div className={styles.actionRow} style={{ flexWrap: 'nowrap' }}>
-                      <Button
-                        size="small"
-                        title="查看 provider health"
-                        icon={<Activity size={13} />}
-                        loading={llmProfileHealthLoading === profile.id}
-                        onClick={() => showLlmProviderHealth(profile)}
-                      />
-                      <Button size="small" title="验证并同步上游模型" icon={<RefreshCw size={13} />} onClick={() => refreshLlmModels(profile.id)} />
-                      <Button size="small" title="编辑" icon={<Pencil size={13} />} onClick={() => editLlmProfile(profile)} />
-                      <Popconfirm title="删除这条模型线路？" onConfirm={() => removeLlmProfile(profile.id)}>
-                        <Button size="small" danger icon={<Trash2 size={13} />} />
-                      </Popconfirm>
-                    </div>
                   </div>
                 ))}
-              </div>
-              )}
-
-
-              <div className={styles.section}>
-                <span className={styles.label}>
-                  全部可用模型
-                  <span className={styles.labelHint}>只展示可进入聊天切换器的模型</span>
-                </span>
-                <div className={styles.actionRow}>
-                  <Button size="small" onClick={handleFetchModels} loading={fetchingModels}>
-                    验证并同步全部线路
-                  </Button>
-                  <span className={styles.labelHint}>
-                    {allAvailableModels.length} 个模型
-                  </span>
-                </div>
-                <span className={styles.labelHint}>逐个发送最多 1 token 的聊天验证请求；可能产生少量上游费用。新模型验证通过才加入；已有模型只在上游明确说不存在时才移除。</span>
-                <div className={styles.modelCatalog}>
-                  {[...new Set(allAvailableModels.map((route) => route.split('::', 1)[0]))].map((provider) => {
-                    const profile = llmProfiles.find((item) => item.id === provider)
-                    const models = allAvailableModels
-                      .filter((route) => route.startsWith(`${provider}::`))
-                      .map((route) => route.slice(provider.length + 2))
-                    return (
-                      <div className={styles.modelProvider} key={provider}>
-                        <span className={styles.profileTitle}>
-                          <strong>{profile?.display_name ?? provider}</strong>
-                          <span className={styles.labelHint}>{models.length}</span>
-                        </span>
-                        <div className={styles.modelTags}>
-                          {models.map((model) => <Tag key={model}>{model}</Tag>)}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {allAvailableModels.length === 0 && (
-                    <span className={styles.labelHint}>暂无模型，请先添加并同步线路</span>
-                  )}
-                </div>
-                {modelFetchResult && (
-                  <Alert
-                    type={modelFetchResult.ok ? 'success' : 'error'}
-                    showIcon
-                    message={modelFetchResult.message}
-                    description={modelFetchResult.details}
-                  />
+                {!llmProfilesLoading && !llmProfilesError && llmProfiles.length === 0 && (
+                  <span className={styles.labelHint}>暂无线路</span>
                 )}
               </div>
 
               <div className={styles.section}>
                 <span className={styles.label}>
+                  全部可用模型
+                  <span className={styles.labelHint}>模型切换器里的模型;每个模型走哪几条线路由管理台登记，故障时按顺序切换</span>
+                </span>
+                <div className={styles.modelCatalog}>
+                  {gatewayModels.map((entry) => (
+                    <div className={styles.modelProvider} key={entry.key}>
+                      <span className={styles.profileTitle}>
+                        <strong>{entry.key}</strong>
+                      </span>
+                      <div className={styles.modelTags}>
+                        {entry.routes.map((route) => <Tag key={route.profile_id}>{route.display_name}</Tag>)}
+                      </div>
+                    </div>
+                  ))}
+                  {gatewayModels.length === 0 && (
+                    <span className={styles.labelHint}>暂无模型(还没从云端读到模型列表)</span>
+                  )}
+                </div>
+              </div>
+
+              <div className={styles.section}>
+                <span className={styles.label}>
                   实际使用模型
-                  <span className={styles.labelHint}>切换器只显示这里列出的模型；使用 provider::model 可区分不同线路的同名模型</span>
+                  <span className={styles.labelHint}>切换器只显示这里列出的模型</span>
                 </span>
                 <Select
                   mode="multiple"
-                  value={parseFavoriteModelRoutes(settings.favoriteModels, 'openai')
-                    .map((route) => `${route.provider}::${route.model}`)}
+                  value={favoriteValues}
                   onChange={(routes: string[]) => patch({ favoriteModels: routes.join(', ') })}
-                  options={allAvailableModels.map((route) => ({ value: route, label: route }))}
+                  options={buildFavoriteModelOptions(gatewayModels, favoriteValues)}
                   optionFilterProp="label"
                   showSearch
                   allowClear
@@ -1675,83 +1309,6 @@ export default function SettingsModal({
           )}
         </div>
       </div>
-      <Modal
-        open={!!llmProfileDraft}
-        title={llmProfileDraft?.create ? '添加模型线路' : '编辑模型线路'}
-        width="min(620px, calc(100vw - 24px))"
-        onCancel={() => setLlmProfileDraft(null)}
-        onOk={saveLlmProfile}
-        okText="保存线路"
-        confirmLoading={llmProfileSaving}
-        okButtonProps={{
-          disabled:
-            !llmProfileDraft?.id.trim() ||
-            !llmProfileDraft?.display_name.trim() ||
-            !llmProfileDraft?.base_url.trim() ||
-            (!!llmProfileDraft?.create && !llmProfileDraft?.api_key.trim()),
-        }}
-      >
-        {llmProfileDraft && (
-          <div className={styles.form}>
-            <div className={styles.section}>
-              <span className={styles.label}>线路 ID</span>
-              <Input
-                value={llmProfileDraft.id}
-                disabled={!llmProfileDraft.create}
-                onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
-                placeholder="three-a-grok"
-              />
-            </div>
-            <div className={styles.section}>
-              <span className={styles.label}>显示名称</span>
-              <Input value={llmProfileDraft.display_name} onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, display_name: e.target.value }))} placeholder="3A Grok" />
-            </div>
-            <div className={styles.section}>
-              <span className={styles.label}>上游 API Base URL</span>
-              <Input value={llmProfileDraft.base_url} onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, base_url: e.target.value }))} placeholder="https://api.example.com/v1" />
-            </div>
-            <div className={styles.section}>
-              <span className={styles.label}>
-                上游 API Key
-                {!llmProfileDraft.create && <span className={styles.labelHint}>留空保留原 Key</span>}
-              </span>
-              <Input.Password value={llmProfileDraft.api_key} onChange={(e) => setLlmProfileDraft((draft) => draft && ({ ...draft, api_key: e.target.value }))} placeholder="sk-…" />
-            </div>
-            <div className={styles.section}>
-              <div className={styles.actionRow}>
-                <span className={styles.label}>线路模型</span>
-                <Button
-                  size="small"
-                  icon={<RefreshCw size={13} />}
-                  disabled={llmProfileDraft.create}
-                  loading={llmProfilesLoading}
-                  onClick={() => void refreshLlmModels(llmProfileDraft.id)}
-                >
-                  验证并同步上游模型
-                </Button>
-              </div>
-              <Select
-                mode="multiple"
-                value={llmProfileDraft.models}
-                onChange={(models: string[]) => setLlmProfileDraft((draft) => draft && ({ ...draft, models }))}
-                options={allAvailableModels
-                  .filter((route) => route.startsWith(`${llmProfileDraft.id}::`))
-                  .map((route) => ({ value: route.slice(llmProfileDraft.id.length + 2) }))}
-                optionFilterProp="value"
-                showSearch
-                placeholder="搜索并选择已验证的模型"
-              />
-              <span className={styles.labelHint}>刷新会逐个发起最小聊天请求，只移除上游明确说不存在的模型，可能产生少量 API 费用。</span>
-            </div>
-            <div className={styles.section}>
-              <span className={styles.switchItem}>
-                <Switch size="small" checked={llmProfileDraft.enabled} onChange={(enabled) => setLlmProfileDraft((draft) => draft && ({ ...draft, enabled }))} />
-                在模型切换器中启用
-              </span>
-            </div>
-          </div>
-        )}
-      </Modal>
     </Modal>
   )
 }

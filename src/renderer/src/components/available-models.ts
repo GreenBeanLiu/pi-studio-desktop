@@ -28,18 +28,6 @@ function toModelInfo(
   }
 }
 
-export function buildAvailableModelRoutes(
-  profiles: readonly LlmProviderProfile[],
-  discoveredRoutes: readonly string[],
-): string[] {
-  return [...new Set([
-    ...profiles
-      .filter((profile) => profile.enabled)
-      .flatMap((profile) => profile.models.map((model) => `${profile.id}::${model.trim()}`)),
-    ...discoveredRoutes,
-  ])]
-}
-
 /** Runtime registry snapshots can lag behind cloud profile updates. Keep its
  * metadata where present, and fill missing routes from the synced catalog.
  *
@@ -81,4 +69,26 @@ export function mergeAvailableModelInfo(
     }
   }
   return [...merged.values()]
+}
+
+/**
+ * 设置页「实际使用模型」的选项:网关登记的模型键(`pi-studio::<键>`),
+ * 外加已经在收藏里、但不是模型键的条目(T3.2 映射不到的旧 `线路::模型`)——
+ * 不列出来的话多选框会把它们显示成裸值，用户也删不掉。
+ */
+export function buildFavoriteModelOptions(
+  gatewayModels: readonly GatewayModelEntry[],
+  favorites: readonly string[],
+): Array<{ value: string; label: string }> {
+  const options = gatewayModels.map((entry) => ({
+    value: `${GATEWAY_MODEL_PROVIDER}::${entry.key}`,
+    label: entry.key,
+  }))
+  const known = new Set(options.map((option) => option.value))
+  for (const route of favorites) {
+    if (known.has(route)) continue
+    known.add(route)
+    options.push({ value: route, label: `${route}(未登记，切换器里不显示)` })
+  }
+  return options
 }

@@ -43,7 +43,7 @@ src/renderer  → 只能 import src/shared；跨进程一律走 window.api
 - 订阅方法用 `on` + 大写开头识别，channel 默认是 `命名空间:事件名`；`pi.onStatus` / `onRuntime` / `onAgentStatusSnapshot` 挂在 `agent:` 下，走 `EVENT_CHANNEL_OVERRIDES`
 - renderer 直接用 `Window.api: DesktopApi`，**不允许手写第二份类型**
 - **新增字段一律先加成可选字段**。自动更新期间新旧 renderer/main 会短暂并存，必填字段会让旧端直接炸
-- 主进程侧的入参校验集中在 `src/main/ipc-contracts.ts`（`requiredString` / `parseProfile` 这套），新 handler 的参数校验走这里，不要在 handler 里散写
+- 主进程侧的入参校验集中在 `src/shared/ipc/validators.ts`（`requiredString` / `isRecord` 这套），新 handler 的参数校验走这里，不要在 handler 里散写
 - `ipcMain.handle` 的注册按功能分布：通用的在 `src/main/ipc.ts`（60 个），其余跟着功能模块走（`routines.ts` / `image-gen.ts` / `model3d.ts` / `sandbox.ts` / `blender-model.ts` / `channels.ts`）
 
 ## 命名与文件约定

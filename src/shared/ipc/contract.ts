@@ -21,8 +21,6 @@ import type {
 } from '@earendil-works/pi-ai/compat'
 import type {
   GatewayModelEntry,
-  LlmProfileSavePayload,
-  LlmProviderHealth,
   LlmProviderProfile,
   ModelCatalogView,
   SettingsSaveInput,
@@ -32,9 +30,6 @@ import type {
 
 export type {
   GatewayModelEntry,
-  LlmProfileWrite,
-  LlmProfileSavePayload,
-  LlmProviderHealth,
   LlmProviderProfile,
   ModelCatalogView,
   SettingsSaveInput,
@@ -97,37 +92,14 @@ export type DesktopApi = {
     openAdminConsole: () => Promise<{ ok: true } | { error: string }>
     onChanged: (cb: () => void) => () => void
   }
+  /** 线路只读(D7):增删改、刷新、验证都在管理台(T3.4)。 */
   llmProfiles: {
     list: () => Promise<LlmProfileListResult>
-    save: (
-      payload: LlmProfileSavePayload,
-    ) => Promise<{ ok: true; profile: LlmProviderProfile; warning?: string } | { error: string }>
-    delete: (id: string) => Promise<{ ok: true; warning?: string } | { error: string }>
-    refreshModels: (
-      id: string,
-    ) => Promise<{ ok: true; profile: LlmProviderProfile; warning?: string } | { error: string }>
-    providerHealth: (
-      id: string,
-    ) => Promise<{ ok: true; health: LlmProviderHealth } | { error: string }>
   }
   modelCatalog: {
     loadProviderLabels: () => Promise<{ ok: true; view: ModelCatalogView } | { error: string }>
     /** 按模型键的目录(T3.1),主进程最近一次同步的缓存。 */
     listModels: () => Promise<{ ok: true; models: GatewayModelEntry[] } | { error: string }>
-    verifyDiscoveredModels: (id: string) => Promise<
-      | {
-          ok: true
-          /** 写回线路的最终列表:验证通过的 + 没测出结论但原本就配置着的。 */
-          models: string[]
-          verifiedModels: string[]
-          /** 上游明确说不存在，已删除/未加入。 */
-          rejectedModels: string[]
-          /** 没测出结论(key 失效、限流、超时等):已配置的保留，新发现的不加入。 */
-          unverifiedModels: string[]
-          warning?: string
-        }
-      | { error: string }
-    >
   }
   sandbox: {
     detect: () => Promise<SandboxDetect>
@@ -734,7 +706,17 @@ export type PiRunFailedEvent = {
   message: string
 }
 
-export type PiRuntimeEvent = AgentSessionEvent | ExtensionUiRequest | PiRunFailedEvent
+/**
+ * 最近一次由哪条线路回复(网关响应头 x-pi-served-by)。内置扩展经 setStatus 回传，
+ * 投影层转成这条(见 shared/served-by.ts)。只在内存里，不跨重启。
+ */
+export type PiServedByEvent = {
+  type: 'served_by'
+  profileId: string
+  upstreamModel?: string
+}
+
+export type PiRuntimeEvent = AgentSessionEvent | ExtensionUiRequest | PiRunFailedEvent | PiServedByEvent
 
 /** 每个聊天各自一个 agent 进程,后台那些只上报这个。 */
 export type SessionActivity = { sessionFile: string | null; running: boolean }

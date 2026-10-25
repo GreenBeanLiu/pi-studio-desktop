@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelInfo } from '../../../shared/ipc/contract'
 import { ACP_PROVIDER_LABEL } from '../../../shared/model-route'
-import { buildModelChip, buildModelMenuGroups, type ModelMenuInput } from './model-menu'
+import { buildModelChip, buildModelMenuGroups, servedByLabel, type ModelMenuInput } from './model-menu'
 
 function model(provider: string, id: string, name?: string, contextWindow = 0): ModelInfo {
   return { provider, id, name, contextWindow, reasoning: false }
@@ -215,5 +215,30 @@ describe('buildModelChip', () => {
     expect(
       buildModelChip({ ...base, models: [DS_CHAT], currentModel: { provider: 'deepseek', id: 'deepseek-chat' } }).name,
     ).toBe('deepseek-chat')
+  })
+})
+
+describe('servedByLabel', () => {
+  const gateway = [
+    { routes: [{ profile_id: 'deepseek', display_name: 'DeepSeek 官方' }, { profile_id: 'cf', display_name: 'Cloudflare Agent' }] },
+  ]
+  const current = { provider: 'pi-studio', id: 'deepseek-flash' }
+  const served = { provider: 'pi-studio', modelId: 'deepseek-flash', profileId: 'cf' }
+
+  it('names the route by its display name', () => {
+    expect(servedByLabel(served, current, gateway)).toBe('最近由 Cloudflare Agent 回复')
+  })
+
+  it('falls back to the route id and shows an aliased upstream model', () => {
+    expect(servedByLabel({ ...served, profileId: 'unknown', upstreamModel: 'deepseek-v4-flash' }, current, gateway)).toBe(
+      '最近由 unknown(上游 deepseek-v4-flash) 回复',
+    )
+    expect(servedByLabel({ ...served, upstreamModel: 'deepseek-flash' }, current, gateway)).toBe('最近由 Cloudflare Agent 回复')
+  })
+
+  it('hides a record taken under another model', () => {
+    expect(servedByLabel(served, { provider: 'pi-studio', id: 'gpt-6-sol' }, gateway)).toBeNull()
+    expect(servedByLabel(null, current, gateway)).toBeNull()
+    expect(servedByLabel(served, null, gateway)).toBeNull()
   })
 })

@@ -173,3 +173,35 @@ export function modelRouteSummary(
   const names = entry.routes.map((route) => route.display_name)
   return names.length > 1 ? `${names.join(' → ')}(故障时按顺序切换)` : names[0]
 }
+
+/** 最近一次由谁回复:记下时用的是哪个模型，换了模型就不再显示(那是上一个模型的线路)。 */
+export type ServedByView = {
+  provider: string
+  modelId: string
+  profileId: string
+  upstreamModel?: string
+}
+
+/**
+ * 「最近由 XX 回复」,XX 用线路显示名(来自 /llm/models 的 routes,任何模型键里登记过的都算),
+ * 查不到就用线路 id。上游模型名和模型键不同(别名)时附在后面。不是当前模型的记录返回 null。
+ */
+export function servedByLabel(
+  servedBy: ServedByView | null,
+  currentModel: { provider: string; id: string } | null,
+  gatewayModels: ReadonlyArray<{ routes: ReadonlyArray<{ profile_id: string; display_name: string }> }>,
+): string | null {
+  if (!servedBy || !currentModel) return null
+  if (servedBy.provider !== currentModel.provider || servedBy.modelId !== currentModel.id) return null
+  let name = servedBy.profileId
+  for (const entry of gatewayModels) {
+    const route = entry.routes.find((item) => item.profile_id === servedBy.profileId)
+    if (route?.display_name) {
+      name = route.display_name
+      break
+    }
+  }
+  const upstream =
+    servedBy.upstreamModel && servedBy.upstreamModel !== currentModel.id ? `(上游 ${servedBy.upstreamModel})` : ''
+  return `最近由 ${name}${upstream} 回复`
+}

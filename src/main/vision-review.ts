@@ -1,6 +1,7 @@
 import { prepareAgentRuntime } from './agent-runtime-config'
 import { getCloudConnection } from './cloud-connection'
 import { cloudFetch } from './cloud-fetch'
+import { GATEWAY_MODEL_PROVIDER } from '../shared/model-route'
 
 /**
  * AI 视觉还原度评审:把参考图(或提示词)和 3D 模型渲染图交给当前聊天模型对比打分。
@@ -10,6 +11,10 @@ import { cloudFetch } from './cloud-fetch'
  * 直连 provider 退役后,这里跟聊天走同一条云端网关线路(profile + 模型 + 会话令牌都
  * 取自 prepareAgentRuntime),不再自己持有 key。网关只有 openai-completions 一种形状,
  * 所以 Anthropic 那套 /v1/messages 调法一并去掉。
+ *
+ * 入口跟着当前选中的模型走(T3.5):选的是 pi-studio 模型键就打按模型键路由的
+ * `/llm/v1/chat/completions`(model 就是模型键，线路由网关选);旧会话还停在按线路的
+ * provider 上时照旧打 `/llm/v1/{线路}/chat/completions`。
  */
 
 export type VisionReview = { score: number; notes: string; model: string }
@@ -54,10 +59,17 @@ export async function reviewModelRender(input: {
     input.renderDataUrl,
   ]
 
-  const relay = connection.relay.trim().replace(/\/+$/, '')
-  const endpoint = `${relay}/llm/v1/${encodeURIComponent(runtime.provider)}/chat/completions`
+  const endpoint = gatewayChatEndpoint(connection.relay, runtime.provider)
   const text = await callGateway(endpoint, chatToken, model, question, images)
   return extractReview(text, model)
+}
+
+/** 当前 provider 对应的网关聊天入口：模型键 provider 走新入口，旧的按线路 provider 走旧入口。 */
+export function gatewayChatEndpoint(relay: string, provider: string): string {
+  const root = relay.trim().replace(/\/+$/, '')
+  return provider === GATEWAY_MODEL_PROVIDER
+    ? `${root}/llm/v1/chat/completions`
+    : `${root}/llm/v1/${encodeURIComponent(provider)}/chat/completions`
 }
 
 async function callGateway(

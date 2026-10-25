@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { agentConfigDir } from './settings'
+import { SERVED_BY_STATUS_KEY } from '../shared/served-by'
 
 export const AGENT_STATUS_EXTENSION_SOURCE = `import fs from 'node:fs'
 import crypto from 'node:crypto'
@@ -184,6 +185,25 @@ export default function piStudioAgentStatus(pi: ExtensionAPI) {
         timestamp: Date.now(),
       }],
     }
+  })
+  installServedByHook(pi)
+}
+
+// 网关在响应头里说是哪条线路回的(x-pi-served-by)。Pi 不把响应头交给宿主，
+// 这里在消费响应流之前读出来，经 setStatus 回传;宿主按 SERVED_BY_STATUS_KEY 认(shared/served-by.ts)。
+// 没有这个头(旧网关、非网关 provider)就什么都不发，不覆盖上一次的值。
+function installServedByHook(pi: ExtensionAPI): void {
+  pi.on('after_provider_response', (event, ctx) => {
+    const headers = event.headers || {}
+    const header = (name: string): string => {
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === name) return String(headers[key] ?? '').trim()
+      }
+      return ''
+    }
+    const profileId = header('x-pi-served-by')
+    if (!profileId) return
+    ctx.ui.setStatus('${SERVED_BY_STATUS_KEY}', JSON.stringify({ profileId, upstreamModel: header('x-pi-upstream-model') }))
   })
 }
 `
