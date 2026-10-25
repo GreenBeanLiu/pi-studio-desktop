@@ -734,7 +734,17 @@ export type PiRunFailedEvent = {
   message: string
 }
 
-export type PiRuntimeEvent = AgentSessionEvent | ExtensionUiRequest | PiRunFailedEvent
+/**
+ * 最近一次由哪条线路回复(网关响应头 x-pi-served-by)。内置扩展经 setStatus 回传，
+ * 投影层转成这条(见 shared/served-by.ts)。只在内存里，不跨重启。
+ */
+export type PiServedByEvent = {
+  type: 'served_by'
+  profileId: string
+  upstreamModel?: string
+}
+
+export type PiRuntimeEvent = AgentSessionEvent | ExtensionUiRequest | PiRunFailedEvent | PiServedByEvent
 
 /** 每个聊天各自一个 agent 进程,后台那些只上报这个。 */
 export type SessionActivity = { sessionFile: string | null; running: boolean }

@@ -44,7 +44,13 @@ import {
 import { diagnosticFileName, sanitizeForDiagnostics } from '../lib/diagnostics-export'
 import ToolCallCard, { type ToolExecutionState } from './ToolCallCard'
 import { type ModelRoute } from '../../../shared/model-route'
-import { buildModelChip, buildModelMenuGroups, modelRouteSummary } from './model-menu'
+import {
+  buildModelChip,
+  buildModelMenuGroups,
+  modelRouteSummary,
+  servedByLabel,
+  type ServedByView,
+} from './model-menu'
 import { mergeAvailableModelInfo } from './available-models'
 import type { GatewayModelEntry } from '../../../shared/contracts'
 import { acpModeLabel, describeAcpModes } from '../../../shared/acp-modes'
@@ -119,6 +125,8 @@ export default function ChatPane({
   const [sending, setSending] = useState(false)
   const [models, setModels] = useState<ModelInfo[]>([])
   const [currentModel, setCurrentModel] = useState<{ provider: string; id: string } | null>(null)
+  // 最近一次由哪条线路回复(网关 x-pi-served-by)。只在内存里:换会话会重挂载，不跨重启(T3.0 决定)。
+  const [servedBy, setServedBy] = useState<ServedByView | null>(null)
   const [thinking, setThinking] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [steeringMode, setSteeringMode] = useState<QueueMode>('all')
   const [followUpMode, setFollowUpMode] = useState<QueueMode>('all')
@@ -438,6 +446,18 @@ export default function ChatPane({
     }
 
     const off = api.pi.onEvent((event: PiRuntimeEvent) => {
+      if (event.type === 'served_by') {
+        const model = currentModelRef.current
+        if (model) {
+          setServedBy({
+            provider: model.provider,
+            modelId: model.id,
+            profileId: event.profileId,
+            upstreamModel: event.upstreamModel,
+          })
+        }
+        return
+      }
       if (event.type === 'extension_ui_request') {
         const runId = activeRunIdRef.current
         const timestamp = new Date().toISOString()
@@ -1154,9 +1174,13 @@ export default function ChatPane({
     // 外部 agent 的推理深度由它自己管,宿主的 setThinkingLevel 对它无效
     return known ? known.reasoning : false
   }, [currentModel, models])
-  const backendModelTitle = backendModel
-    ? `模型与参数 · 当前由 ${backendModel.name ?? backendModel.id} 驱动`
-    : '模型与参数'
+  const servedByText = servedByLabel(servedBy, currentModel, gatewayModels)
+  const backendModelTitle = [
+    backendModel ? `模型与参数 · 当前由 ${backendModel.name ?? backendModel.id} 驱动` : '模型与参数',
+    servedByText,
+  ]
+    .filter(Boolean)
+    .join('\n')
   // 分组规则(收藏过滤、ACP 组豁免)抽在 model-menu.ts 里,那边有测试。
   const modelMenuItems = useMemo(
     () => buildModelMenuGroups({ models, favoriteModels, providerLabels, currentModel, query: modelQuery }),
@@ -1188,6 +1212,8 @@ export default function ChatPane({
     if (routes) {
       // 按模型键的条目:线路由网关选，显示登记的顺序，而不是网关自己的地址
       rows.push(['线路', routes])
+      const recent = servedByLabel(servedBy, { provider: m.provider, id: m.id }, gatewayModels)
+      if (recent && currentModel?.provider === m.provider && currentModel.id === m.id) rows.push(['最近', recent])
     } else {
       rows.push(['服务商', m.provider])
       if (host) rows.push(['接入点', host])

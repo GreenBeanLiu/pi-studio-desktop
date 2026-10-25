@@ -94,3 +94,34 @@ describe('task sessions in the event projection', () => {
     expect(h.emitTaskEvent).not.toHaveBeenCalled()
   })
 })
+
+describe('served-by status from the built-in extension', () => {
+  const status = (profileId: string) =>
+    ({
+      type: 'extension_ui_request',
+      id: `s-${profileId}`,
+      method: 'setStatus',
+      statusKey: 'pi-served-by',
+      statusText: JSON.stringify({ profileId, upstreamModel: 'm' }),
+    }) as unknown as PiRuntimeEvent
+
+  it('reaches the foreground UI as a served_by event, not an extension request', () => {
+    const chat = entry({
+      job: { observeRun: vi.fn(), isRunActive: () => false, touch: vi.fn(), startedRunAt: () => null },
+    } as unknown as Partial<AgentEntry>)
+    const h = host(chat)
+    new EventProjection(h).handleEvent(chat, status('deepseek'))
+    expect(h.emitEvent).toHaveBeenCalledWith(
+      { type: 'served_by', profileId: 'deepseek', upstreamModel: 'm' },
+      expect.anything(),
+    )
+  })
+
+  it('keeps only the latest one for a background session', () => {
+    const chat = entry()
+    const projection = new EventProjection(host(null))
+    projection.handleEvent(chat, status('a'))
+    projection.handleEvent(chat, status('b'))
+    expect(chat.pendingUi).toEqual([{ type: 'served_by', profileId: 'b', upstreamModel: 'm' }])
+  })
+})

@@ -1,6 +1,7 @@
 import { appendAppLog, normalizeError } from './app-log'
 import type { PiRuntimeEvent } from '../shared/ipc/contract'
 import { isBlockingExtensionUiMethod } from './extension-ui-ownership'
+import { servedByFromStatusEvent } from '../shared/served-by'
 import type { AgentJob } from './agent-job-registry'
 import type { LoopDetection } from './agent-loop-guard'
 import {
@@ -34,7 +35,9 @@ export type EventProjectionHost = {
 export class EventProjection {
   constructor(private readonly host: EventProjectionHost) {}
 
-  handleEvent(entry: AgentEntry, event: PiRuntimeEvent): void {
+  handleEvent(entry: AgentEntry, rawEvent: PiRuntimeEvent): void {
+    // 扩展回传的「谁回的」换成稳定事件:界面不用认 setStatus 的键名，也不会被当成扩展请求记进时间线
+    const event: PiRuntimeEvent = servedByFromStatusEvent(rawEvent) ?? rawEvent
     entry.job.observeRun(nextRunActive(entry.job.isRunActive(), event.type))
     entry.status.observe(event)
     const loop = entry.loopGuard.observe(event)
@@ -60,6 +63,11 @@ export class EventProjection {
     if (this.host.isActive(entry)) return
     // 后台会话:审批之类的请求先攒着,切回前台再补发;其余只上报运行状态给侧栏
     if ((event as { type?: string }).type === 'extension_ui_request') entry.pendingUi.push(event)
+    if (event.type === 'served_by') {
+      // 只要最新一条:切回前台时补发，攒一串旧值没有意义
+      entry.pendingUi = entry.pendingUi.filter((pending) => pending.type !== 'served_by')
+      entry.pendingUi.push(event)
+    }
     this.host.emitActivity({ sessionFile: entry.sessionFile, running: entry.job.isRunActive() })
   }
 
