@@ -1,23 +1,38 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createStyles } from 'antd-style'
-import { Alert, App as AntApp, Button, Empty, Input, Segmented, Select, Tooltip } from 'antd'
+import { Alert, App as AntApp, Button, Checkbox, Empty, Input, Segmented, Select, Tooltip } from 'antd'
 import { Clapperboard, Copy, Download, ImagePlus, RefreshCw, X } from 'lucide-react'
 
-import { api, type ImageGenHistoryItem, type VideoAspectRatio, type VideoGenHistoryItem, type VideoResolution } from '../lib/api'
+import { api, type ImageGenHistoryItem, type VideoAspectRatio, type VideoGenHistoryItem, type VideoModelOption, type VideoResolution } from '../lib/api'
 
 /**
  * 视频生成(2026-10-20 加回来):首帧 + 怎么动 → 一条短视频。
  * 首帧可以从出图历史里挑(做商品图的场景图直接接着做主图视频),也可以传本地图;
  * 不给首帧就是文生视频。结果和历史都在云端,页面直接播。
+ *
+ * 10-25 起多模型:有哪些模型、每个能选几秒 / 什么比例 / 能不能带声音 / 每秒多少钱,都从云端
+ * /videogen/health 拿(源头是设备面的 video-models.json),这里不写死;加模型不用发桌面版。
+ * 老后端没有这份列表,就退回只有 Grok 的那套(FALLBACK_MODEL)。
  */
 type Frame = { kind: 'local'; dataUrl: string } | { kind: 'cloud'; url: string } | null
 
 const MAX_BYTES = 18 * 1024 * 1024
 const PROMPT_MAX = 2000
-const DURATIONS = [6, 8, 10, 12, 15]
-const ASPECTS: VideoAspectRatio[] = ['9:16', '16:9', '1:1', '3:2', '2:3']
-// APIMart 实价(2026-10-21 用它的 /v1/usage 对过账),按 USD 7.2 换成人民币
-const YUAN_PER_SECOND: Record<VideoResolution, number> = { '480p': 0.0102 * 7.2, '720p': 0.01912 * 7.2 }
+// 老后端(没有模型列表)时的唯一选项;价格是 APIMart 10-21 对过账的实价 × 7.2
+const FALLBACK_MODEL: VideoModelOption = {
+  id: 'grok-video-1.5',
+  label: 'Grok Video 1.5',
+  description: '最便宜,试效果用',
+  durations: [6, 8, 10, 12, 15],
+  resolutions: ['480p', '720p'],
+  aspectRatios: ['9:16', '16:9', '1:1', '3:2', '2:3'],
+  audio: false,
+  defaults: { duration: 6, resolution: '480p', aspectRatio: '9:16' },
+  yuanPerSecond: { '480p': 0.0102 * 7.2, '720p': 0.01912 * 7.2 },
+  ok: true,
+}
+const RESOLUTION_LABEL: Record<VideoResolution, string> = { '480p': '480p 试效果', '720p': '720p 成片', '1080p': '1080p 高清' }
+const ASPECT_LABEL: Partial<Record<VideoAspectRatio, string>> = { '9:16': '9:16 竖屏', '16:9': '16:9 横屏', adaptive: '跟首帧' }
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -42,6 +57,9 @@ export default function VideoGenPage(): React.JSX.Element {
   const { message } = AntApp.useApp()
   const fileInput = useRef<HTMLInputElement>(null)
   const [health, setHealth] = useState<{ ok: boolean; reason?: string }>()
+  const [models, setModels] = useState<VideoModelOption[]>([FALLBACK_MODEL])
+  const [modelId, setModelId] = useState(FALLBACK_MODEL.id)
+  const [audio, setAudio] = useState(false)
   const [frame, setFrame] = useState<Frame>(null)
   const [recentImages, setRecentImages] = useState<ImageGenHistoryItem[]>([])
   const [prompt, setPrompt] = useState('')
@@ -56,6 +74,7 @@ export default function VideoGenPage(): React.JSX.Element {
   async function refresh(): Promise<void> {
     const [h, videos, images] = await Promise.all([api.videoGen.health(), api.videoGen.history(60), api.imageGen.history(24)])
     setHealth(h.ok ? { ok: true } : { ok: false, reason: h.reason })
+    if (h.models?.length) setModels(h.models)
     if (Array.isArray(videos)) setHistory(videos)
     if (Array.isArray(images)) setRecentImages(images.filter((item) => isImageUrl(item.url)).slice(0, 12))
   }
@@ -81,6 +100,16 @@ export default function VideoGenPage(): React.JSX.Element {
     }
   }
 
+  const spec = useMemo(() => models.find((item) => item.id === modelId) ?? models[0], [models, modelId])
+
+  // 换模型时,上一个模型的时长 / 清晰度 / 比例在新模型上不一定合法(可灵只有 5、10 秒),不合法就回到新模型的默认值
+  useEffect(() => {
+    if (!spec.durations.includes(duration)) setDuration(spec.defaults.duration)
+    if (!spec.resolutions.includes(resolution)) setResolution(spec.defaults.resolution)
+    if (!spec.aspectRatios.includes(aspectRatio)) setAspectRatio(spec.defaults.aspectRatio)
+    if (!spec.audio) setAudio(false)
+  }, [spec])
+
   async function generate(): Promise<void> {
     setBusySince(Date.now())
     setNow(Date.now())
@@ -91,6 +120,8 @@ export default function VideoGenPage(): React.JSX.Element {
         duration,
         resolution,
         aspectRatio,
+        model: spec.id,
+        ...(spec.audio && audio ? { audio: true } : {}),
       })
       if ('error' in result) {
         message.error(`没有生成成功：${result.error}`)
@@ -127,15 +158,33 @@ export default function VideoGenPage(): React.JSX.Element {
   }
 
   const busy = busySince !== null
-  const estimate = YUAN_PER_SECOND[resolution] * duration
+  const estimate = (spec.yuanPerSecond[resolution] ?? 0) * duration
   const frameSrc = frame?.kind === 'local' ? frame.dataUrl : frame?.kind === 'cloud' ? frame.url : null
-  const canGenerate = !busy && health?.ok === true && prompt.trim().length > 0 && prompt.length <= PROMPT_MAX
+  const canGenerate = !busy && health?.ok === true && spec.ok && prompt.trim().length > 0 && prompt.length <= PROMPT_MAX
 
   return (
     <div className={styles.page}>
       <section className={styles.panel}>
         <div className={styles.title}><Clapperboard size={16} /> 视频生成</div>
         {health && !health.ok && <Alert type="warning" showIcon message="现在出不了视频" description={health.reason} />}
+
+        <div className={styles.field}>
+          <span className={styles.label}>模型</span>
+          <Select
+            value={spec.id}
+            onChange={setModelId}
+            options={models.map((item) => ({
+              value: item.id,
+              disabled: !item.ok,
+              label: (
+                <span className={styles.modelOption}>
+                  <span>{item.label}</span>
+                  <span className={styles.hint}>{item.ok ? item.description : '没有能用的供应商'}</span>
+                </span>
+              ),
+            }))}
+          />
+        </div>
 
         <div className={styles.label}>首帧（可选，不选就是文生视频）</div>
         {frameSrc ? (
@@ -178,25 +227,28 @@ export default function VideoGenPage(): React.JSX.Element {
         <div className={styles.row}>
           <div className={styles.field}>
             <span className={styles.label}>时长</span>
-            <Select value={duration} onChange={setDuration} options={DURATIONS.map((value) => ({ value, label: `${value} 秒` }))} />
+            <Select value={duration} onChange={setDuration} options={spec.durations.map((value) => ({ value, label: `${value} 秒` }))} />
           </div>
           <div className={styles.field}>
             <span className={styles.label}>清晰度</span>
-            <Segmented value={resolution} onChange={(value) => setResolution(value as VideoResolution)} options={[{ value: '480p', label: '480p 试效果' }, { value: '720p', label: '720p 成片' }]} />
+            <Segmented value={resolution} onChange={(value) => setResolution(value as VideoResolution)} options={spec.resolutions.map((value) => ({ value, label: RESOLUTION_LABEL[value] ?? value }))} />
           </div>
         </div>
         <div className={styles.field}>
           <span className={styles.label}>画幅</span>
-          <Segmented value={aspectRatio} onChange={(value) => setAspectRatio(value as VideoAspectRatio)} options={ASPECTS.map((value) => ({ value, label: value === '9:16' ? '9:16 竖屏' : value === '16:9' ? '16:9 横屏' : value }))} />
+          <Segmented value={aspectRatio} onChange={(value) => setAspectRatio(value as VideoAspectRatio)} options={spec.aspectRatios.map((value) => ({ value, label: ASPECT_LABEL[value] ?? value }))} />
         </div>
+        {spec.audio && (
+          <Checkbox checked={audio} onChange={(event) => setAudio(event.target.checked)}>生成声音（环境音 / 配乐，电商主图视频一般不用）</Checkbox>
+        )}
 
         <div className={styles.footer}>
-          <span className={styles.hint}>约 ¥{estimate.toFixed(2)}（APIMart 实价）</span>
+          <span className={styles.hint}>约 ¥{estimate.toFixed(2)}（按实测单价估）</span>
           <Button type="primary" loading={busy} disabled={!canGenerate} onClick={() => void generate()}>
             {busy ? `生成中 ${clock(now - (busySince ?? now))}` : '生成视频'}
           </Button>
         </div>
-        {busy && <div className={styles.hint}>一般 1–3 分钟，可以先去做别的，好了会提示。</div>}
+        {busy && <div className={styles.hint}>一般 2–5 分钟，可以先去做别的，好了会提示。</div>}
       </section>
 
       <section className={styles.panel}>
@@ -276,6 +328,15 @@ const useStyles = createStyles(({ token, css }) => ({
   label: css`
     font-size: 13px;
     color: ${token.colorTextSecondary};
+  `,
+  modelOption: css`
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   `,
   hint: css`
     font-size: 12px;

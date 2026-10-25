@@ -529,8 +529,26 @@ export type IsolatedApplyResult = {
   removed: boolean
 }
 
-export type VideoResolution = '480p' | '720p'
-export type VideoAspectRatio = '9:16' | '16:9' | '1:1' | '3:2' | '2:3'
+export type VideoResolution = '480p' | '720p' | '1080p'
+export type VideoAspectRatio = '9:16' | '16:9' | '1:1' | '3:2' | '2:3' | '3:4' | '4:3' | '21:9' | 'adaptive'
+/**
+ * 一个视频模型能吃什么(2026-10-25):来自设备面 /videogen/health,源头是设备面仓库的 video-models.json。
+ * 桌面按它画选项,加模型不用发桌面版。
+ */
+export type VideoModelOption = {
+  id: string
+  label: string
+  description: string
+  durations: number[]
+  resolutions: VideoResolution[]
+  aspectRatios: VideoAspectRatio[]
+  audio: boolean
+  defaults: { duration: number; resolution: VideoResolution; aspectRatio: VideoAspectRatio }
+  /** 估价用(人民币/秒),不参与计费 */
+  yuanPerSecond: Partial<Record<VideoResolution, number>>
+  /** 现在有没有能用的供应商 */
+  ok: boolean
+}
 export type VideoGenPayload = {
   prompt: string
   /** 本地图(data URL):先传 R2 再当首帧 */
@@ -541,11 +559,16 @@ export type VideoGenPayload = {
   duration?: number
   resolution?: VideoResolution
   aspectRatio?: VideoAspectRatio
+  /** 不给 = 云端默认(Grok Video 1.5);10-25 起可选 */
+  model?: string
+  /** 让模型配声音,只有 VideoModelOption.audio 为 true 的模型收 */
+  audio?: boolean
 }
 export type VideoGenResult =
   | { videoUrl: string; provider: string | null; durationSec: number | null; resolution: string | null; firstFrameUrl: string | null }
   | { error: string }
-export type VideoGenHealth = { ok: true } | { ok: false; reason: string }
+/** models:新后端才有;老后端只回 ok,桌面退回只有 Grok 的那套选项 */
+export type VideoGenHealth = { ok: true; models?: VideoModelOption[] } | { ok: false; reason: string; models?: VideoModelOption[] }
 /** 和出图历史同一张表(engine = cloud-video),url 是 mp4 */
 export type VideoGenHistoryItem = ImageGenHistoryItem
 

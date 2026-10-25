@@ -39,6 +39,15 @@ describe('generateVideo', () => {
     expect(t.calls[1].body).toEqual({ prompt: '海边日落', duration: 6, resolution: '480p', aspectRatio: '9:16' })
   })
 
+  it('a chosen model and audio go along; audio off is not sent at all', async () => {
+    const t = io()
+    await generateVideo({ prompt: 'x', model: 'seedance-2.0-fast', audio: true, duration: 5 }, t.fake)
+    await generateVideo({ prompt: 'x', model: 'kling-2.6', audio: false, duration: 5 }, t.fake)
+    expect(t.calls[0].body).toMatchObject({ model: 'seedance-2.0-fast', audio: true, duration: 5 })
+    expect(t.calls[1].body).toMatchObject({ model: 'kling-2.6' })
+    expect(t.calls[1].body).not.toHaveProperty('audio')
+  })
+
   it('an empty prompt is refused without calling the cloud', async () => {
     const t = io()
     expect(await generateVideo({ prompt: '  ' }, t.fake)).toEqual({ error: '写一下画面怎么动、镜头怎么走' })
@@ -60,7 +69,16 @@ describe('videoHealth', () => {
   it('says why video is unavailable: an old backend, or no key yet', async () => {
     const reply = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status })) as VideoGenIo['fetch']
     expect(await videoHealth({ fetch: reply(404, {}) })).toEqual({ ok: false, reason: '云端 404(后端可能还没更新到有视频的版本)' })
-    expect(await videoHealth({ fetch: reply(200, { ok: false }) })).toEqual({ ok: false, reason: '云端还没配视频供应商的 key(管理台里填 APIMart)' })
+    expect(await videoHealth({ fetch: reply(200, { ok: false }) })).toEqual({ ok: false, reason: '云端还没配视频供应商的 key(管理台里填 APIMart / kie.ai)' })
     expect(await videoHealth({ fetch: reply(200, { ok: true }) })).toEqual({ ok: true })
+  })
+
+  it('passes the model list on and drops entries that are missing fields', async () => {
+    const kling = {
+      id: 'kling-2.6', label: '可灵 Kling 2.6', description: '', durations: [5, 10], resolutions: ['720p', '1080p'],
+      aspectRatios: ['9:16'], audio: false, defaults: { duration: 5, resolution: '720p', aspectRatio: '9:16' }, yuanPerSecond: { '720p': 0.265 }, ok: true,
+    }
+    const fetch = (async () => new Response(JSON.stringify({ ok: true, models: [kling, { id: 'broken' }] }))) as VideoGenIo['fetch']
+    expect(await videoHealth({ fetch })).toEqual({ ok: true, models: [kling] })
   })
 })

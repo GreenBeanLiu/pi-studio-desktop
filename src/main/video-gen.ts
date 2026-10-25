@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 
-import type { VideoGenHealth, VideoGenHistoryItem, VideoGenPayload, VideoGenResult } from '../shared/ipc/contract'
+import type { VideoGenHealth, VideoGenHistoryItem, VideoGenPayload, VideoGenResult, VideoModelOption } from '../shared/ipc/contract'
 import { appendAppLog, normalizeError } from './app-log'
 import { getCloudConnection } from './cloud-connection'
 import { cloudMediaFetch, readCloudSseResult, uploadCloudImageReference } from './cloud-media'
@@ -41,6 +41,8 @@ export async function generateVideo(payload: VideoGenPayload, io: VideoGenIo = d
           duration: payload.duration ?? 6,
           resolution: payload.resolution ?? '480p',
           aspectRatio: payload.aspectRatio ?? '9:16',
+          ...(payload.model ? { model: payload.model } : {}),
+          ...(payload.audio ? { audio: true } : {}),
         }),
       },
       VIDEO_TIMEOUT_MS,
@@ -68,11 +70,23 @@ export async function videoHealth(io: Pick<VideoGenIo, 'fetch'> = defaultIo): Pr
   try {
     const response = await io.fetch('/videogen/health', {}, 5_000)
     if (!response.ok) return { ok: false, reason: `云端 ${response.status}(后端可能还没更新到有视频的版本)` }
-    const body = (await response.json()) as { ok?: boolean }
-    return body.ok ? { ok: true } : { ok: false, reason: '云端还没配视频供应商的 key(管理台里填 APIMart)' }
+    const body = (await response.json()) as { ok?: boolean; models?: unknown }
+    const models = Array.isArray(body.models) ? body.models.filter(isModelOption) : undefined
+    return body.ok
+      ? { ok: true, ...(models ? { models } : {}) }
+      : { ok: false, reason: '云端还没配视频供应商的 key(管理台里填 APIMart / kie.ai)', ...(models ? { models } : {}) }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   }
+}
+
+/** 云端给的模型描述只收形状对的;缺字段的条目丢掉,别让一个坏条目把页面带崩。 */
+function isModelOption(value: unknown): value is VideoModelOption {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return typeof v.id === 'string' && typeof v.label === 'string' && Array.isArray(v.durations) && v.durations.length > 0 &&
+    Array.isArray(v.resolutions) && v.resolutions.length > 0 && Array.isArray(v.aspectRatios) && v.aspectRatios.length > 0 &&
+    !!v.defaults && typeof v.defaults === 'object' && !!v.yuanPerSecond && typeof v.yuanPerSecond === 'object'
 }
 
 export async function videoHistory(limit = 60, io: Pick<VideoGenIo, 'fetch'> = defaultIo): Promise<VideoGenHistoryItem[] | { error: string }> {
