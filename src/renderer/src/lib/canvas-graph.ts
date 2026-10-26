@@ -190,6 +190,18 @@ export function estimateVideoYuan(data: VideoNodeData, model: VideoModelOption |
   return perSecond == null ? null : perSecond * (data.duration ?? model.defaults.duration)
 }
 
+/** 工具栏加节点:从视口中心开始,被占了就往右挪一格,别叠在一起 */
+export function freeSpot(nodes: readonly GraphNode[], start: { x: number; y: number }, width: number): { x: number; y: number } {
+  const step = width + 60
+  let at = start
+  for (let i = 0; i < 30; i++) {
+    const taken = nodes.some((n) => Math.abs(n.position.x - at.x) < step - 20 && Math.abs(n.position.y - at.y) < 200)
+    if (!taken) return at
+    at = { x: at.x + step, y: at.y }
+  }
+  return at
+}
+
 let seq = 0
 export function newId(prefix: string): string {
   seq += 1

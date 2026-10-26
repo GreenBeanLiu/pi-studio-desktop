@@ -15,6 +15,7 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type FitViewOptions,
   type Node,
   type NodeProps,
   type OnConnectEnd,
@@ -24,7 +25,7 @@ import { createStyles } from 'antd-style'
 import { App as AntApp, Button, Input, Select, Tooltip } from 'antd'
 import { Clapperboard, Copy, Image as ImageIcon, ImagePlus, Loader2, Play, Plus, Shuffle, Type, X } from 'lucide-react'
 
-import { api, type ImageModel, type VideoModelOption } from '../lib/api'
+import { api, type ImageModel, type VideoGenPayload, type VideoModelOption } from '../lib/api'
 import {
   blankData,
   buildCanvasImageRequest,
@@ -32,6 +33,7 @@ import {
   canConnect,
   estimateVideoYuan,
   fitVideoOptions,
+  freeSpot,
   newId,
   parseCanvas,
   serializeCanvas,
@@ -54,6 +56,8 @@ import { IMAGE_MODELS, imageModel } from './image-generation-models'
 const STORAGE_KEY = 'pi-studio.canvas.v1'
 const MAX_UPLOAD_BYTES = 18 * 1024 * 1024
 const NODE_WIDTH = 280
+// 适应视图时给左上的工具栏、右下的小地图让位置,别压住节点
+const FIT_VIEW: FitViewOptions = { padding: { top: '72px', left: '48px', right: '200px', bottom: '48px' } }
 
 type CanvasNode = Node<CanvasNodeData>
 
@@ -450,21 +454,22 @@ function CanvasInner({ appearance }: { appearance: 'dark' | 'light' }): React.JS
       const es = rf.getEdges()
       const node = ns.find((n) => n.id === id)
       if (!node || node.data.kind === 'text' || node.data.status === 'running') return
-      if (node.data.kind === 'image') {
-        const request = buildCanvasImageRequest(ns, es, id, crypto.randomUUID())
-        if ('error' in request) return patch(id, { error: request.error, status: 'error' })
-        patch(id, { status: 'running', error: undefined, startedAt: Date.now() })
-        const result = await api.imageGen.generate(request)
-        if ('error' in result) return patch(id, { status: 'error', error: result.error, startedAt: undefined })
-        const url = result.urls?.[0] ?? result.publicUrl ?? result.dataUrl
-        patch(id, { status: 'done', url, startedAt: undefined })
-      } else {
-        const payload = buildCanvasVideoPayload(ns, es, id)
-        if ('error' in payload) return patch(id, { error: payload.error, status: 'error' })
-        patch(id, { status: 'running', error: undefined, startedAt: Date.now() })
-        const result = await api.videoGen.generate(payload)
-        if ('error' in result) return patch(id, { status: 'error', error: result.error, startedAt: undefined })
-        patch(id, { status: 'done', url: result.videoUrl, startedAt: undefined })
+      const request = node.data.kind === 'image' ? buildCanvasImageRequest(ns, es, id, crypto.randomUUID()) : buildCanvasVideoPayload(ns, es, id)
+      if ('error' in request) return patch(id, { error: request.error, status: 'error' })
+      patch(id, { status: 'running', error: undefined, startedAt: Date.now() })
+      // IPC 也会直接抛(网络切换时主进程报 ERR_NETWORK_CHANGED),不接住节点就永远停在"生成中"
+      try {
+        if (node.data.kind === 'image') {
+          const result = await api.imageGen.generate(request as Parameters<typeof api.imageGen.generate>[0])
+          if ('error' in result) return patch(id, { status: 'error', error: result.error, startedAt: undefined })
+          patch(id, { status: 'done', url: result.urls?.[0] ?? result.publicUrl ?? result.dataUrl, startedAt: undefined })
+        } else {
+          const result = await api.videoGen.generate(request as VideoGenPayload)
+          if ('error' in result) return patch(id, { status: 'error', error: result.error, startedAt: undefined })
+          patch(id, { status: 'done', url: result.videoUrl, startedAt: undefined })
+        }
+      } catch (error) {
+        patch(id, { status: 'error', error: error instanceof Error ? error.message : String(error), startedAt: undefined })
       }
     },
     [rf, patch],
@@ -499,10 +504,14 @@ function CanvasInner({ appearance }: { appearance: 'dark' | 'light' }): React.JS
       const rect = wrapper.current?.getBoundingClientRect()
       const at =
         position ??
-        rf.screenToFlowPosition({
-          x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - NODE_WIDTH / 2 + (Math.random() - 0.5) * 80,
-          y: (rect?.top ?? 0) + (rect?.height ?? 600) / 3 + (Math.random() - 0.5) * 80,
-        })
+        freeSpot(
+          rf.getNodes(),
+          rf.screenToFlowPosition({
+            x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - NODE_WIDTH / 2,
+            y: (rect?.top ?? 0) + (rect?.height ?? 600) / 3,
+          }),
+          NODE_WIDTH,
+        )
       const id = newId(kind)
       setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { id, type: kind, position: at, data: data ?? blankData(kind), selected: true }])
       return id
@@ -585,8 +594,8 @@ function CanvasInner({ appearance }: { appearance: 'dark' | 'light' }): React.JS
           proOptions={{ hideAttribution: true }}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable />
+          <Controls showInteractive={false} fitViewOptions={FIT_VIEW} />
+          <MiniMap pannable zoomable style={{ width: 160, height: 100 }} />
           <Panel position="top-left">
             <div className={styles.toolbar}>
               <Button size="small" icon={<Type size={13} />} onClick={() => addNode('text')}>

@@ -7,6 +7,7 @@ import {
   canConnect,
   estimateVideoYuan,
   fitVideoOptions,
+  freeSpot,
   parseCanvas,
   serializeCanvas,
   variantOf,
@@ -139,5 +140,13 @@ describe('persistence', () => {
   it('ignores garbage', () => {
     expect(parseCanvas('{')).toBeNull()
     expect(parseCanvas(JSON.stringify({ version: 2, nodes: [], edges: [] }))).toBeNull()
+  })
+})
+
+describe('freeSpot', () => {
+  it('shifts right past occupied spots', () => {
+    const nodes = [node('a', text('x')), { ...node('b', text('y')), position: { x: 340, y: 50 } }]
+    expect(freeSpot(nodes, { x: 0, y: 0 }, 280)).toEqual({ x: 680, y: 0 })
+    expect(freeSpot([], { x: 5, y: 5 }, 280)).toEqual({ x: 5, y: 5 })
   })
 })
