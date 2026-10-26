@@ -218,7 +218,7 @@ export type DesktopApi = {
       referenceUrls?: string[]
       maskDataUrl?: string
       size?: ImageGenSize
-      aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio
+      aspectRatio?: GeminiImageAspectRatio | GrokImageAspectRatio | FlareImageAspectRatio
       imageSize?: GeminiImageResolution | GrokImageResolution
       n?: number
       quality?: ImageGenQuality
