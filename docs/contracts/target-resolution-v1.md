@@ -99,5 +99,5 @@
 Runtime 仍可接受历史 `execution_target` 入参（字段优先级不变），但新客户端不再发送。
 
 跨版本验收证据与解锁结论见
-[Slice D 跨版本验收证据包](../slice-d-cross-version-validation-2026-09-15.md)
+[Slice D 跨版本验收证据包](https://github.com/GreenBeanLiu/pi-studio-desktop/blob/master/docs/slice-d-cross-version-validation-2026-09-15.md)
 （**镜像删除已解锁并落地**）。

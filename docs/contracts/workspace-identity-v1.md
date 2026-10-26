@@ -1,9 +1,6 @@
 # Workspace Identity v1
 
 日期：2026-09-15。实现位于 pi-studio-control-plane（`workspace_resolution.py`、Workspace Registry）。
-本文件为 Desktop docs SoT 镜像；权威行为以 Runtime 实现与
-[`tests/fixtures/workspace-identity-v1.json`](https://github.com/GreenBeanLiu/pi-studio-control-plane/blob/main/tests/fixtures/workspace-identity-v1.json)
-为准。
 
 ## 目的与范围
 
@@ -35,7 +32,7 @@ Web / Mobile / Desktop / 脚本共用同一套语义，避免把本机绝对路�
 
 1. **客户端不得把绝对路径当作 `workspace_id`。** Mobile / Web / 脚本应发送稳定 id；路径只出现在设备侧 binding 或 legacy `workspace` 字段。
 2. **路径只在 executor 选定之后绑定。** 仅有 `workspace_id` 时，入口可补齐 `repository`，但不得自行挑选任一设备路径。
-3. **同一 `workspace_id` + 不同 executor → 不同路径合法。** 例如 Mac `/Users/me/Works/pi-studio` 与 Win `D:\\Works\\pi-studio` 共享一个 id。
+3. **同一 `workspace_id` + 不同 executor → 不同路径合法。** 例如 Mac `/Users/me/Works/pi-studio` 与 Win `D:\Works\pi-studio` 共享一个 id。
 4. **同 repository 发现合并 binding。** 库存同步按 repository 归并；单次发现内同一 executor 的额外 worktree 记为 conflict，不静默覆盖。
 5. **name 碰撞允许。** 两个 local「Works」可以同名、不同 id；UI 消歧是后续 Slice E 可选工作，不是本契约的前置条件。
 6. **失败关闭。** 未知 id、选定设备无 binding、repository 冲突、已绑定路径与注册漂移 → 拒绝，不静默换路径。
@@ -53,6 +50,6 @@ Web / Mobile / Desktop / 脚本共用同一套语义，避免把本机绝对路�
 
 ## 与相关文档
 
-- 解析收敛实现记录：[工作区身份解析收敛](../workspace-resolution-2026-09-14.md)
-- 架构切片：[Slice E](../architecture-decoupling-review-2026-09-13.md)（首切 = 契约 + 测试）
+- 解析收敛实现记录：[pi-studio `workspace-resolution-2026-09-14.md`](https://github.com/GreenBeanLiu/pi-studio-desktop/blob/master/docs/workspace-resolution-2026-09-14.md)
+- 架构切片：[Slice E](https://github.com/GreenBeanLiu/pi-studio-desktop/blob/master/docs/architecture-decoupling-review-2026-09-13.md)（首切 = 契约 + 测试）
 - 目标解析中的 `workspace_id` 入参语义见 [Target Resolution v1](target-resolution-v1.md)
