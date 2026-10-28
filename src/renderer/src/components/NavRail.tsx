@@ -1,7 +1,7 @@
 import { createStyles } from 'antd-style'
 import { ActionIcon } from '@lobehub/ui'
 import { Tooltip } from 'antd'
-import { FolderOpen, MessageSquare, Settings, Sun, Moon, CalendarClock, Image, Box, Clapperboard } from 'lucide-react'
+import { FolderOpen, MessageSquare, Settings, Sun, Moon, CalendarClock, Image, Box, Clapperboard, Workflow } from 'lucide-react'
 import type { Workspace } from '../lib/api'
 
 const useStyles = createStyles(({ token, css }) => ({
@@ -81,7 +81,7 @@ const useStyles = createStyles(({ token, css }) => ({
 
 type Props = {
   workspace: Workspace | null
-  activeView: 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video'
+  activeView: 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video' | 'canvas'
   appearance: 'dark' | 'light'
   onSwitchWorkspace: () => void
   onChat: () => void
@@ -89,6 +89,7 @@ type Props = {
   onImageGen: () => void
   onModel3D: () => void
   onVideo: () => void
+  onCanvas: () => void
   onSettings: () => void
   onToggleTheme: () => void
 }
@@ -103,6 +104,7 @@ export default function NavRail({
   onImageGen,
   onModel3D,
   onVideo,
+  onCanvas,
   onSettings,
   onToggleTheme,
 }: Props) {
@@ -159,6 +161,14 @@ export default function NavRail({
         icon={<Clapperboard size={15} />}
         title="视频生成"
         onClick={onVideo}
+        size={{ blockSize: 36, borderRadius: 8 }}
+      />
+
+      <ActionIcon
+        className={cx(styles.iconBtn, activeView === 'canvas' && styles.iconBtnActive)}
+        icon={<Workflow size={15} />}
+        title="画布"
+        onClick={onCanvas}
         size={{ blockSize: 36, borderRadius: 8 }}
       />
 

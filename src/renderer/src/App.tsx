@@ -8,6 +8,7 @@ import RoutinesPage from './components/RoutinesPage'
 import ImageGenPage from './components/ImageGenPage'
 import Model3DPage from './components/Model3DPage'
 import VideoGenPage from './components/VideoGenPage'
+import CanvasPage from './components/CanvasPage'
 import SessionSidebar from './components/SessionSidebar'
 import { useAppShortcuts } from './keyboard/use-app-shortcuts'
 import DesktopLayoutContainer from './components/DesktopLayoutContainer'
@@ -29,7 +30,7 @@ type UpdateState =
   | { status: 'error'; message: string }
 
 type AgentIssue = Exclude<AgentStatusEvent, { status: 'started' }>
-type ActiveView = 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video'
+type ActiveView = 'chat' | 'routines' | 'imagegen' | 'model3d' | 'video' | 'canvas'
 
 const useStyles = createStyles(({ token, css }) => ({
   shell: css`
@@ -67,6 +68,10 @@ export default function App({ appearance, onToggleTheme }: AppProps) {
   const [agentIssue, setAgentIssue] = useState<AgentIssue | null>(null)
   const [diagnosticsExporter, setDiagnosticsExporter] = useState<(() => void) | null>(null)
   const [activeView, setActiveView] = useState<ActiveView>('chat')
+  const [canvasOpened, setCanvasOpened] = useState(false)
+  useEffect(() => {
+    if (activeView === 'canvas') setCanvasOpened(true)
+  }, [activeView])
   // 当前工作区 agent 的沙箱运行模式(null=直跑主机);来自 agent:status started 事件
   const [sandboxMode, setSandboxMode] = useState<SandboxMode | null>(null)
   const [executionSecurity, setExecutionSecurity] = useState<ExecutionSecuritySnapshot | null>(null)
@@ -288,6 +293,7 @@ export default function App({ appearance, onToggleTheme }: AppProps) {
           onImageGen={() => setActiveView('imagegen')}
           onModel3D={() => setActiveView('model3d')}
           onVideo={() => setActiveView('video')}
+          onCanvas={() => setActiveView('canvas')}
           onSettings={() => setShowSettings(true)}
           onToggleTheme={onToggleTheme}
         />
@@ -323,6 +329,12 @@ export default function App({ appearance, onToggleTheme }: AppProps) {
           {activeView === 'imagegen' && <ImageGenPage />}
           {activeView === 'model3d' && <Model3DPage />}
           {activeView === 'video' && <VideoGenPage />}
+          {/* 画布首次打开后常驻:视频一跑十几分钟,切走再回来结果不能丢 */}
+          {canvasOpened && (
+            <div style={{ display: activeView === 'canvas' ? 'flex' : 'none', flex: 1, minHeight: 0, minWidth: 0 }}>
+              <CanvasPage appearance={appearance} />
+            </div>
+          )}
         </DesktopLayoutContainer>
       </div>
 
